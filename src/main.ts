@@ -1,0 +1,61 @@
+import './style.css';
+import './overrides.css';
+import { Engine, towerInfo, type TowerKind } from './engine';
+import { Renderer } from './renderer';
+
+const app = document.querySelector<HTMLDivElement>('#app')!;
+app.innerHTML = `
+  <main class="shell">
+    <header class="topbar"><div class="brand"><span class="brand-mark">✦</span><div><h1>Arcane Bastion</h1><p>Citadel war table</p></div></div>
+      <div class="readouts"><div><b id="wave">0 / 50</b><span>WAVE</span></div><div><b id="gold">500</b><span>GOLD</span></div><div><b id="health">20</b><span>WARD</span></div><div><b id="score">0</b><span>SCORE</span></div></div>
+      <div class="controls"><button id="pause" class="icon" aria-label="Pause game">Ⅱ</button><button id="speed" class="speed">1×</button><button id="restart" class="icon" aria-label="Restart game">↻</button></div>
+    </header>
+    <section class="stage-wrap"><aside class="tower-dock"><p class="kicker">Runes</p><h2>Raise a ward</h2>
+      <button class="tower-card active" data-tower="bolt"><i class="rune bolt">✦</i><span><b>Rune Bolt</b><small>Rapid first-target fire</small></span><em>110</em><kbd>1</kbd></button>
+      <button class="tower-card" data-tower="mortar"><i class="rune mortar">◆</i><span><b>Ember Mortar</b><small>Slow blast area damage</small></span><em>165</em><kbd>2</kbd></button>
+      <button class="tower-card" data-tower="frost"><i class="rune frost">✧</i><span><b>Frost Obelisk</b><small>Chilling focused fire</small></span><em>145</em><kbd>3</kbd></button>
+      <p class="hint">Click clear ground to place. <kbd>Esc</kbd> cancels.</p>
+    </aside>
+    <section class="battlefield" aria-label="Arcane Bastion battlefield"><canvas id="map"></canvas><canvas id="game"></canvas><canvas id="baseline"></canvas><div id="wave-call" class="wave-call">Prepare the ward</div><div id="toast" role="status"></div><button id="start-wave" class="start-wave">Begin wave <span>→</span></button></section>
+    <aside class="detail-dock" id="details"><p class="kicker">Command</p><h2>Field report</h2><div class="report"><span>Enemies on path</span><b id="enemy-count">0</b></div><div class="report"><span>Projectiles in flight</span><b id="projectile-count">0</b></div><div class="report"><span>Towers raised</span><b id="tower-count">0 / 100</b></div><div class="selection" id="selection"><p>Select a tower on the field to inspect its range, upgrades, and value.</p></div>
+      <button id="lab-open" class="lab-open">Open Performance Lab <span>↗</span></button></aside>
+    </section>
+    <section id="lab" class="lab hidden" aria-label="Performance Lab"><div class="lab-head"><div><p class="kicker">Measurement suite</p><h2>Performance Lab</h2><p>Equal seeded scenario. Baseline is deliberately object-heavy; optimized is the production renderer.</p></div><button id="lab-close" class="icon" aria-label="Close Performance Lab">×</button></div>
+      <div class="lab-options"><button class="lab-mode active" data-mode="optimized">Optimized engine</button><button class="lab-mode" data-mode="baseline">Naive baseline</button><button class="preset" data-preset="1000">1,000 enemies</button><button class="preset" data-preset="2500">2,500 enemies</button><button class="preset" data-preset="5000">5,000 stress</button><button id="lab-run" class="primary">Run scenario</button></div>
+      <div class="metrics"><div><b id="fps">—</b><span>FPS</span></div><div><b id="p95">—</b><span>95th percentile</span></div><div><b id="over33">—</b><span>Frames over 33ms</span></div><div><b id="active-load">0 / 0 / 0</b><span>Enemies / Towers / Projectiles</span></div><div><b id="memory">—</b><span>JS heap (if available)</span></div></div>
+      <p class="lab-note">For a fair recording: let each mode warm up for 10 seconds, show the live frame metrics, then reset and run the same load in the other mode.</p></section>
+    <div id="terminal" class="terminal hidden"><div><p class="kicker" id="terminal-kicker">The ward fell</p><h2 id="terminal-title">The citadel endures</h2><p id="terminal-copy"></p><button id="terminal-restart" class="primary">Raise the ward again</button></div></div>
+  </main>`;
+
+const q = <T extends HTMLElement>(s: string) => document.querySelector<T>(s)!;
+const engine = new Engine();
+const renderer = new Renderer(q('#game'), q('#map'), q('#baseline'));
+let selectedKind: TowerKind | null = 'bolt', selectedTower = -1, paused = false, speed = 1, mode: 'game' | 'optimized' | 'baseline' = 'game', load = 5000;
+let mouse = { x: 0, y: 0, inside: false }; let last = performance.now(), acc = 0, lastUi = 0; const samples: number[] = [];
+
+function toast(message: string) { const t = q('#toast'); t.textContent = message; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 1500); }
+function selectKind(kind: TowerKind | null) { selectedKind = kind; selectedTower = -1; document.querySelectorAll('.tower-card').forEach(el => el.classList.toggle('active', (el as HTMLElement).dataset.tower === kind)); updateSelection(); }
+function worldPoint(e: PointerEvent) { const r = q('#game').getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width * 1800, y: (e.clientY - r.top) / r.height * 900 }; }
+function updateSelection() { const el = q('#selection'); const t = engine.towers[selectedTower]; if (!t) { el.innerHTML = `<p>${selectedKind ? `${selectedKind === 'bolt' ? 'Rune Bolt' : selectedKind === 'mortar' ? 'Ember Mortar' : 'Frost Obelisk'} selected. Click a clear plot to place it.` : 'Select a tower on the field to inspect its range, upgrades, and value.'}</p>`; return; }
+  const s = towerInfo[t.kind], upgrade = t.level < 3 ? Math.round(s.cost * (.75 + t.level * .55)) : 0;
+  el.innerHTML = `<div class="selected-title"><i class="rune ${t.kind}">${t.kind === 'bolt' ? '✦' : t.kind === 'mortar' ? '◆' : '✧'}</i><div><b>${t.kind === 'bolt' ? 'Rune Bolt' : t.kind === 'mortar' ? 'Ember Mortar' : 'Frost Obelisk'}</b><small>Level ${t.level} of 3</small></div></div><div class="statline"><span>Damage <b>${Math.round(s.damage * (1 + (t.level-1)*.55))}</b></span><span>Range <b>${s.range}</b></span></div><div class="selection-actions"><button id="upgrade" ${upgrade && engine.gold >= upgrade ? '' : 'disabled'}>${upgrade ? `Upgrade · ${upgrade}` : 'Maximum power'}</button><button id="sell">Sell · ${Math.floor(t.spent*.6)}</button></div>`;
+  document.querySelector<HTMLButtonElement>('#upgrade')?.addEventListener('click', () => { if (engine.upgradeTower(selectedTower)) { toast('Runes strengthened'); updateSelection(); } }); q('#sell').addEventListener('click', () => { engine.sellTower(selectedTower); selectedTower = -1; toast('Tower reclaimed'); updateSelection(); });
+}
+function updateUi(force = false) { const now = performance.now(); if (!force && now - lastUi < 100) return; lastUi = now; const s = engine.snapshot(); q('#wave').textContent = `${s.wave} / 50`; q('#gold').textContent = String(s.gold); q('#health').textContent = String(s.health); q('#score').textContent = String(s.score); q('#enemy-count').textContent = String(s.enemies); q('#projectile-count').textContent = String(s.projectiles); q('#tower-count').textContent = `${s.towers} / 100`;
+  const button = q<HTMLButtonElement>('#start-wave'); button.classList.toggle('hidden', mode !== 'game' || s.phase !== 'playing' && s.wave >= 50 || s.spawning || s.enemies > 0); button.innerHTML = s.wave === 0 ? 'Begin first wave <span>→</span>' : `Begin wave ${s.wave + 1} <span>→</span>`; q('#wave-call').textContent = s.spawning ? `Wave ${s.wave} · ${s.remaining} incoming` : s.enemies ? `Wave ${s.wave} · ${s.enemies} on path` : s.wave >= 50 ? 'The citadel stands' : `The next ward awaits · wave ${s.wave + 1}`;
+  if (s.phase === 'gameover' || s.phase === 'victory') terminal(s.phase, s);
+  if (mode !== 'game') updateMetrics();
+}
+function terminal(phase: string, s: ReturnType<Engine['snapshot']>) { const el = q('#terminal'); if (!el.classList.contains('hidden')) return; q('#terminal-kicker').textContent = phase === 'victory' ? 'Fifty waves survived' : 'The ward fell'; q('#terminal-title').textContent = phase === 'victory' ? 'Arcane Bastion endures' : 'The citadel was overrun'; q('#terminal-copy').textContent = phase === 'victory' ? `Final score ${s.score.toLocaleString()} · ${s.kills.toLocaleString()} invaders banished.` : `You reached wave ${s.wave} with ${s.kills} invaders banished.`; el.classList.remove('hidden'); }
+function updateMetrics() { if (!samples.length) return; const sorted = [...samples].sort((a,b)=>a-b), avg = samples.reduce((a,b)=>a+b,0)/samples.length, p95 = sorted[Math.floor(sorted.length*.05)] || 0, over = samples.filter(x=>x>33).length/samples.length*100, s=engine.snapshot(); q('#fps').textContent = `${(1000/avg).toFixed(0)}`; q('#p95').textContent = `${(1000/p95).toFixed(0)} FPS`; q('#over33').textContent = `${over.toFixed(1)}%`; q('#active-load').textContent = `${s.enemies.toLocaleString()} / ${s.towers} / ${s.projectiles.toLocaleString()}`; const mem=(performance as Performance & {memory?: {usedJSHeapSize:number}}).memory; q('#memory').textContent=mem ? `${(mem.usedJSHeapSize/1048576).toFixed(1)} MB` : 'Unavailable'; }
+function loop(now: number) { const frame = Math.min(100, now-last); last=now; if(mode!=='game') { samples.push(frame); if(samples.length>600)samples.shift(); } if(!paused) { acc += frame/1000*speed; while(acc >= 1/60) { engine.update(1/60); acc -= 1/60; } }
+  const preview = mouse.inside && selectedKind && mode==='game' ? { kind:selectedKind, x:mouse.x, y:mouse.y, valid:engine.validPad(mouse.x,mouse.y) } : undefined; renderer.render(engine, selectedTower, preview, mode==='baseline'); updateUi(); requestAnimationFrame(loop); }
+requestAnimationFrame(loop);
+
+q('#game').addEventListener('pointermove', e => { const p=worldPoint(e); mouse={...p,inside:true}; }); q('#game').addEventListener('pointerleave',()=>mouse.inside=false);
+q('#game').addEventListener('pointerdown', e => { if(mode!=='game')return; const p=worldPoint(e); if(selectedKind) { if(engine.placeTower(selectedKind,p.x,p.y)) toast('A new ward rises'); else toast('That ground cannot hold a tower'); updateSelection(); return; } let best=-1,d=40; engine.towers.forEach((t,i)=>{const x=Math.hypot(t.x-p.x,t.y-p.y);if(x<d){d=x;best=i}}); selectedTower=best; updateSelection(); });
+document.querySelectorAll<HTMLButtonElement>('.tower-card').forEach(b=>b.addEventListener('click',()=>selectKind(b.dataset.tower as TowerKind)));
+q('#start-wave').addEventListener('click',()=>engine.startWave()); q('#pause').addEventListener('click',()=>{paused=!paused;q('#pause').textContent=paused?'▶':'Ⅱ';toast(paused?'Time paused':'Time resumed')}); q('#speed').addEventListener('click',()=>{speed=speed===1?2:speed===2?3:1;q('#speed').textContent=`${speed}×`}); q('#restart').addEventListener('click',()=>{engine.reset();mode='game';paused=false;selectedTower=-1;selectKind('bolt');q('#terminal').classList.add('hidden');updateUi(true)}); q('#terminal-restart').addEventListener('click',()=>q('#restart').click());
+document.addEventListener('keydown',e=>{if(e.key==='Escape')selectKind(null); if(e.key==='1')selectKind('bolt');if(e.key==='2')selectKind('mortar');if(e.key==='3')selectKind('frost');if(e.key===' ') {e.preventDefault();q('#pause').click()} if(e.key.toLowerCase()==='n'&&mode==='game')engine.startWave();});
+q('#lab-open').addEventListener('click',()=>q('#lab').classList.remove('hidden')); q('#lab-close').addEventListener('click',()=>q('#lab').classList.add('hidden')); document.querySelectorAll<HTMLButtonElement>('.lab-mode').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.lab-mode').forEach(x=>x.classList.remove('active'));b.classList.add('active');mode=b.dataset.mode as 'optimized'|'baseline'})); document.querySelectorAll<HTMLButtonElement>('.preset').forEach(b=>b.addEventListener('click',()=>{load=Number(b.dataset.preset);document.querySelectorAll('.preset').forEach(x=>x.classList.remove('active'));b.classList.add('active')})); q('#lab-run').addEventListener('click',()=>{samples.length=0;engine.setupBenchmark(mode==='baseline',load,100,1000);paused=false;toast(`${mode==='baseline'?'Naive baseline':'Optimized engine'} running at ${load.toLocaleString()} enemies`);});
+updateUi(true);
