@@ -1,4 +1,4 @@
-import { Engine, WORLD_H, WORLD_W, enemyInfo, getPath, towerInfo, type TowerKind } from './engine';
+import { Engine, WORLD_H, WORLD_W, enemyInfo, getCastleRotation, getGatePosition, getPath, towerInfo, type TowerKind } from './engine';
 
 const vs = `#version 300 es
 layout(location=0) in vec2 corner; layout(location=1) in vec3 posSize; layout(location=2) in vec4 colorKind;
@@ -34,7 +34,7 @@ export class Renderer {
   private drawMap() { const c = this.map.getContext('2d')!; const w = this.map.width, h = this.map.height, wave = Math.max(0, this.terrainWave), chapterStep = wave % 10; c.clearRect(0, 0, w, h); const tone = ['#638d69','#54777b','#6c5d55','#466e80','#775548'][Math.max(0,this.chapter)]; c.fillStyle = tone; c.fillRect(0, 0, w, h); c.save(); c.scale(w / WORLD_W, h / WORLD_H); c.imageSmoothingEnabled = false;
     const flat = this.art.flat, elevation = this.art.elevation, water = this.art.water; if (flat?.complete) { for (let x=0;x<WORLD_W;x+=128) for(let y=0;y<WORLD_H;y+=128) c.drawImage(flat, 0, 0, 128, 128, x, y, 128, 128); } if (water?.complete && this.chapter >= 1) { for (let x=0;x<640;x+=64) c.drawImage(water, x, 690, 64, 64); }
     for (let x = 45; x < WORLD_W; x += 105) for (let y = 35; y < WORLD_H; y += 95) { c.fillStyle = `rgba(112,164,96,${.045 + ((x * 11 + y * 7 + wave * 13) % 9) * .009})`; c.beginPath(); c.arc(x + ((y / 7 + wave * 3) % 18), y, 42, 0, Math.PI * 2); c.fill(); }
-    const p = getPath(), castle = p[p.length - 1], castleX = Math.max(0, castle[0] - 238), castleY = Math.max(50, Math.min(WORLD_H - 210, castle[1] - 96)); c.lineCap = 'round'; c.lineJoin = 'round'; c.strokeStyle = '#27343b'; c.lineWidth = 132; c.beginPath(); c.moveTo(p[0][0], p[0][1]); for (let i = 1; i < p.length; i++) c.lineTo(p[i][0], p[i][1]); c.stroke(); c.strokeStyle = this.chapter >= 2 ? '#765544' : '#a77b4d'; c.lineWidth = 86; c.stroke(); c.strokeStyle = 'rgba(255,234,175,.22)'; c.lineWidth = 3; c.setLineDash([10, 14]); c.stroke(); c.setLineDash([]);
+    const p = getPath(), gate = getGatePosition(), castleRotation = getCastleRotation(); c.lineCap = 'round'; c.lineJoin = 'round'; c.strokeStyle = '#27343b'; c.lineWidth = 132; c.beginPath(); c.moveTo(p[0][0], p[0][1]); for (let i = 1; i < p.length; i++) c.lineTo(p[i][0], p[i][1]); c.stroke(); c.strokeStyle = this.chapter >= 2 ? '#765544' : '#a77b4d'; c.lineWidth = 86; c.stroke(); c.strokeStyle = 'rgba(255,234,175,.22)'; c.lineWidth = 3; c.setLineDash([10, 14]); c.stroke(); c.setLineDash([]);
     const scenery = [
       { cliffs: [[0,0,1800,210],[1450,610,320,220]], trees: [[150,145],[575,90],[790,640],[1215,110],[1540,700]] },
       { cliffs: [[0,0,620,180],[960,0,840,155],[1020,610,720,220]], trees: [[120,650],[450,130],[860,520],[1270,720],[1650,500]] },
@@ -44,9 +44,9 @@ export class Renderer {
     ][this.chapter] ?? { cliffs: [], trees: [] };
     if (elevation?.complete) for (const [x,y,ww,hh] of scenery.cliffs) c.drawImage(elevation, 0, 0, 256, 220, x, y, ww, hh);
     if (this.art.tree?.complete) for (const [x,y] of scenery.trees) c.drawImage(this.art.tree, 0, 0, 128, 128, x, y, 96, 96);
-    if (this.art.castle?.complete) c.drawImage(this.art.castle,0,0,320,256,castleX,castleY,240,192); if(this.art.fire?.complete && this.chapter>=2) c.drawImage(this.art.fire,0,0,128,128,castleX+58,castleY+122,80,80);
+    if (this.art.castle?.complete) { c.save(); c.translate(gate[0], gate[1]); c.rotate(castleRotation); c.drawImage(this.art.castle,0,0,320,256,-120,-174,240,192); if(this.art.fire?.complete && this.chapter>=2) c.drawImage(this.art.fire,0,0,128,128,-38,-166,76,76); c.restore(); }
     if (wave > 1) { c.globalAlpha = .05 + chapterStep * .012; c.fillStyle = this.chapter >= 2 ? '#321f1b' : '#d1b55d'; for (let i=0;i<7+chapterStep;i++) { const x = (i * 241 + wave * 97) % WORLD_W, y = 155 + ((i * 167 + wave * 53) % 610); c.fillRect(x, y, 34 + (i % 3) * 12, 3); } c.globalAlpha = 1; }
-    const g = c.createRadialGradient(castle[0], castle[1], 3, castle[0], castle[1], 130); g.addColorStop(0, 'rgba(246,202,90,.9)'); g.addColorStop(.25, 'rgba(235,144,68,.4)'); g.addColorStop(1, 'rgba(235,144,68,0)'); c.fillStyle = g; c.beginPath(); c.arc(castle[0], castle[1], 130, 0, Math.PI * 2); c.fill(); c.restore(); }
+    const g = c.createRadialGradient(gate[0], gate[1], 3, gate[0], gate[1], 130); g.addColorStop(0, 'rgba(246,202,90,.9)'); g.addColorStop(.25, 'rgba(235,144,68,.4)'); g.addColorStop(1, 'rgba(235,144,68,0)'); c.fillStyle = g; c.beginPath(); c.arc(gate[0], gate[1], 130, 0, Math.PI * 2); c.fill(); c.restore(); }
   private emit(x: number, y: number, size: number, rgb: readonly number[], kind: number, alpha = 1) { if (this.count >= 9000) return; const o = this.count++ * 8; const d = this.data; d[o] = x; d[o + 1] = y; d[o + 2] = size; d[o + 3] = rgb[0]; d[o + 4] = rgb[1]; d[o + 5] = rgb[2]; d[o + 6] = alpha; d[o + 7] = kind; }
   render(engine: Engine, selected = -1, preview?: { kind: TowerKind; x: number; y: number; valid: boolean }, naive = false) {
     this.setChapter(engine.levelIndex, engine.wave);
@@ -88,7 +88,7 @@ export class Renderer {
     c.globalAlpha = 1;
 
     // The gate has one persistent, readable integrity signal; it is the only dynamic castle UI.
-    const gate = getPath().at(-1)!, gateRatio = Math.max(0, engine.health) / 20;
+    const gate = getGatePosition(), gateRatio = Math.max(0, engine.health) / 20;
     const gateW = 106, gateH = 8, gateX = Math.max(10, Math.min(this.sprites.width - gateW - 10, gate[0] * sx - 142)), gateY = Math.max(12, gate[1] * sy - 104);
     c.fillStyle = 'rgba(16, 27, 31, .84)'; c.fillRect(gateX - 3, gateY - 17, gateW + 6, gateH + 22);
     c.fillStyle = '#f5e7bd'; c.font = 'bold 10px Georgia, serif'; c.fillText(`GATE ${Math.max(0, engine.health)} / 20`, gateX, gateY - 6);

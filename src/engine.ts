@@ -70,6 +70,14 @@ function pathPosition(distance: number): [number, number] {
   const t = Math.max(0, Math.min(1, (distance - cumulative[i]) / segment[i]));
   return [path[i][0] + (path[i + 1][0] - path[i][0]) * t, path[i][1] + (path[i + 1][1] - path[i][1]) * t];
 }
+/** Keep combat at the visible gate, rather than at the route's off-map endpoint. */
+export const GATE_PATH_INSET = 118;
+export function getGatePosition(): [number, number] { return pathPosition(Math.max(0, PATH_LENGTH - GATE_PATH_INSET)); }
+export function getCastleRotation(): number {
+  const end = path.length - 1, dx = path[end][0] - path[end - 1][0], dy = path[end][1] - path[end - 1][1];
+  // Source castle art faces down; rotate its gate back toward the incoming final route segment.
+  return Math.atan2(-dy, -dx) - Math.PI / 2;
+}
 
 export class Engine {
   readonly enemyActive = new Uint8Array(MAX_ENEMIES);
@@ -188,19 +196,20 @@ export class Engine {
       if (this.enemyBreach[i]) {
         this.enemyBreachTime[i] -= dt;
         if (this.enemyBreachTime[i] <= 0) {
-          const [castleX, castleY] = pathPosition(PATH_LENGTH);
-          this.spawnEffect(type === 2 ? 1 : 3, castleX, castleY, type === 2 ? .48 : .32);
+          const [gateX, gateY] = getGatePosition();
+          this.spawnEffect(type === 2 ? 1 : 3, gateX, gateY, type === 2 ? .48 : .32);
           this.releaseEnemy(i); this.health -= s.base;
         }
         continue;
       }
       if (this.enemySlowTime[i] > 0) { this.enemySlowTime[i] -= dt; } else this.enemySlow[i] = 0;
       this.enemyDist[i] += s.speed * (1 - this.enemySlow[i]) * dt;
-      if (this.enemyDist[i] >= PATH_LENGTH) {
+      const breachDistance = this.benchmark ? PATH_LENGTH : PATH_LENGTH - GATE_PATH_INSET;
+      if (this.enemyDist[i] >= breachDistance) {
         // Stress mode remains a pure movement benchmark. Campaign raiders visibly breach the gate first.
         if (this.benchmark) { this.releaseEnemy(i); this.health -= s.base; continue; }
-        const [castleX, castleY] = pathPosition(PATH_LENGTH), lane = i % 3 - 1;
-        this.enemyDist[i] = PATH_LENGTH; this.enemyX[i] = castleX - 22; this.enemyY[i] = castleY + lane * 20;
+        const [gateX, gateY] = getGatePosition(), lane = i % 3 - 1;
+        this.enemyDist[i] = breachDistance; this.enemyX[i] = gateX - 22; this.enemyY[i] = gateY + lane * 20;
         const duration = type === 0 ? .42 : type === 1 ? .32 : type === 2 ? .26 : type === 3 ? .5 : .62;
         this.enemyBreach[i] = 1; this.enemyBreachTime[i] = duration; this.enemyBreachDuration[i] = duration; continue;
       }
