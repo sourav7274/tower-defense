@@ -23,7 +23,7 @@ Open the local URL shown by Vite. Use `npm run build` for the production build a
 
 `src/engine.ts` is a framework-independent simulation. It uses one fixed 60 Hz update loop, seeded wave generation, compact enemy/projectile pools, and a uniform spatial grid. The DOM only owns controls and accessible textual state; it never holds thousands of game entities.
 
-`src/renderer.ts` owns drawing. It renders a static Canvas 2D relief map only when the viewport resizes, then streams visible dynamic instances to WebGL2 each frame. The WebGL renderer uses instanced quads for towers, enemies, and projectiles. Browsers without WebGL2 receive a simpler Canvas fallback.
+`src/renderer.ts` owns drawing. It rebakes the static Canvas 2D map only on a level/wave change or viewport resize, then streams visible dynamic instances to WebGL2 each frame. The WebGL renderer uses instanced quads for high-load fallback entities. Browsers without WebGL2 receive a simpler Canvas fallback.
 
 `src/main.ts` connects the renderer, simulation, controls, game states, and the Performance Lab. The only recurring scheduler is `requestAnimationFrame`; individual towers, enemies, and projectiles do not create timers or animation loops.
 
@@ -31,13 +31,13 @@ Open the local URL shown by Vite. Use `npm run build` for the production build a
 
 | System | Behavior |
 | --- | --- |
-| Towers | Rune Bolt: fast single-target fire. Ember Mortar: heavy splash. Frost Obelisk: damage plus slow. Each has three levels and a 60% sell value. |
-| Enemies | Swift Wisps, armored Golems, splitting Broodlings, shielded Specters, and Warden bosses every tenth wave. |
-| Progression | Five authored levels of ten waves use unique routes, castle positions, terrain themes, and starting gold (500–700). Bosses, armor, shields, splitting, and faster spawns increase late-game pressure. |
+| Defenders | Longbow Guard: fast single-target fire. Bombard Tower: heavy splash. Shield Warrior: damage plus slow. Each has three training ranks and a 60% sell value. |
+| Raiders | Goblin Torch, Barrel, TNT, Warrior, and Archer/boss variants. Raiders that reach Highwatch stop at the gate, attack, then reduce its integrity. |
+| Progression | Five authored levels of ten waves use unique routes, gate-facing castle placement, terrain themes, and starting gold (500–700). Bosses, armor, shields, splitting, and faster spawns increase late-game pressure. |
 
 ## Highwatch art direction
 
-The campaign is presented as **Siege of Highwatch**: Blue Knights defend an elevated citadel while Goblin raiders cross a lower ravine. Five themed maps—Highwatch Gate, Mist Narrows, Siege Scar, Flooded Ravine, and Last Stand—own their routes and castle endpoints. Static terrain is rebaked only between waves and levels. Players deploy animated Longbow Guards, Siege Engineers, and Shield Warriors, train them through three ranks, and discharge them for gold. See `ASSET_CREDITS.md` for asset provenance.
+The campaign is presented as **Siege of Highwatch**: Blue Knights defend an elevated citadel while Goblin raiders cross a lower ravine. Five themed maps—Highwatch Gate, Mist Narrows, Siege Scar, Flooded Ravine, and Last Stand—own their routes, scenery, and castle approach. The castle rotates toward each final approach; its visible doorway is also the breach target, rather than the route's outer map endpoint. Static terrain is rebaked only between waves and levels. Players deploy animated Longbow Guards, Siege Engineers, and Shield Warriors, train them through three ranks, and discharge them for gold. See `ASSET_CREDITS.md` for asset provenance.
 
 ## Performance design
 
@@ -71,4 +71,4 @@ For an assessment measurement, use a production build in a current Chrome or Edg
 
 ## Deployment
 
-The project is a static Vite app and is ready for a Vercel static deployment after local verification. The current delivery intentionally stops before account-connected deployment, per project direction.
+The project is a static Vite app. Vercel detects Vite automatically: set the project root to this folder, leave the build command as `npm run build`, and publish the generated `dist` directory. No environment variables are required.
