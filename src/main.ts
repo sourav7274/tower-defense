@@ -8,7 +8,7 @@ const app = document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML = `
   <main class="shell">
     <header class="topbar"><div class="brand"><span class="brand-mark">✦</span><div><h1>Arcane Bastion</h1><p>Citadel war table</p></div></div>
-      <div class="readouts"><div><b id="wave">0 / 50</b><span>WAVE</span></div><div><b id="gold">500</b><span>GOLD</span></div><div><b id="health">20</b><span>WARD</span></div><div><b id="score">0</b><span>SCORE</span></div></div>
+      <div class="readouts"><div><b id="wave">0 / 50</b><span>WAVE</span></div><div><b id="gold">500</b><span>GOLD</span></div><div><b id="health">20</b><span>GATE</span></div><div><b id="score">0</b><span>SCORE</span></div></div>
       <div class="controls"><button id="help" class="icon" aria-label="How to play">ⓘ</button><button id="perf-toggle" class="icon" aria-label="Performance overlay">FPS</button><button id="pause" class="icon" aria-label="Pause game">Ⅱ</button><button id="speed" class="speed">1×</button><button id="restart" class="icon" aria-label="Restart game">↻</button></div>
     </header>
     <section class="stage-wrap"><aside class="tower-dock"><p class="kicker">Runes</p><h2>Raise a ward</h2>

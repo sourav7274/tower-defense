@@ -13,15 +13,15 @@ function compile(gl: WebGL2RenderingContext, type: number, source: string) { con
 export class Renderer {
   private gl: WebGL2RenderingContext | null; private program: WebGLProgram | null = null; private vao: WebGLVertexArrayObject | null = null; private buffer: WebGLBuffer | null = null;
   private data = new Float32Array(9000 * 8); private count = 0; private fallback: CanvasRenderingContext2D | null = null; private baselineCtx!: CanvasRenderingContext2D;
-  private chapter = -1; private terrainWave = -1; private art: Record<string, HTMLImageElement> = {};
+  private chapter = -1; private terrainWave = -1; private mapLevel = -1; private art: Record<string, HTMLImageElement> = {};
   private spriteCtx: CanvasRenderingContext2D; private enemySpriteArt: HTMLImageElement[] = [];
   constructor(private canvas: HTMLCanvasElement, private map: HTMLCanvasElement, private sprites: HTMLCanvasElement, private baseline: HTMLCanvasElement) {
     this.gl = canvas.getContext('webgl2', { alpha: true, antialias: false, premultipliedAlpha: true });
     if (this.gl) this.setup(); else this.fallback = canvas.getContext('2d');
     this.spriteCtx = sprites.getContext('2d')!; new ResizeObserver(() => this.resize()).observe(canvas.parentElement!); this.loadArt(); this.resize();
   }
-  private loadArt() { for (const [key, file] of Object.entries({ flat:'Tilemap_Flat.png', elevation:'Tilemap_Elevation.png', bridge:'Bridge_All.png', water:'Water.png', tree:'Tree.png', castle:'Castle_Blue.png', tower:'Tower_Blue.png', fire:'Fire.png', arrow:'Arrow.png', explosion:'Explosions.png', archer:'Archer_Blue.png', archerBody:'Archer_Blue_NoArms.png', archerBow:'Archer_Bow_Blue.png', longbowIdle:'defender-longbow-ready.png', pawn:'Pawn_Blue.png', warrior:'Warrior_Blue.png' })) { const image = new Image(); image.src = `/assets/${file}`; image.onload = () => this.drawMap(); this.art[key] = image; } for(const file of ['enemy-torch-walk.png','enemy-barrel-walk.png','enemy-tnt-walk.png','enemy-warrior-walk.png','enemy-archer-walk.png']) { const image = new Image(); image.src=`/assets/${file}`; this.enemySpriteArt.push(image); } }
-  private setChapter(wave: number) { const next = Math.min(4, Math.floor(Math.max(0, wave - 1) / 10)); if (next !== this.chapter || wave !== this.terrainWave) { this.chapter = next; this.terrainWave = wave; this.drawMap(); } }
+  private loadArt() { for (const [key, file] of Object.entries({ flat:'Tilemap_Flat.png', elevation:'Tilemap_Elevation.png', bridge:'Bridge_All.png', water:'Water.png', tree:'Tree.png', castle:'Castle_Blue.png', tower:'Tower_Blue.png', fire:'Fire.png', arrow:'Arrow.png', explosion:'Explosions.png', archer:'Archer_Blue.png', archerBody:'Archer_Blue_NoArms.png', archerBow:'Archer_Bow_Blue.png', longbowIdle:'defender-longbow-ready.png', pawn:'Pawn_Blue.png', warrior:'Warrior_Blue.png', torchRed:'Torch_Red.png', barrelRed:'Barrel_Red.png', tntRed:'TNT_Red.png', warriorRed:'Warrior_Red.png', archerRed:'Archer_Red.png' })) { const image = new Image(); image.src = `/assets/${file}`; image.onload = () => this.drawMap(); this.art[key] = image; } for(const file of ['enemy-torch-walk.png','enemy-barrel-walk.png','enemy-tnt-walk.png','enemy-warrior-walk.png','enemy-archer-walk.png']) { const image = new Image(); image.src=`/assets/${file}`; this.enemySpriteArt.push(image); } }
+  private setChapter(level: number, wave: number) { if (level !== this.mapLevel || wave !== this.terrainWave) { this.chapter = level; this.mapLevel = level; this.terrainWave = wave; this.drawMap(); } }
   get accelerated() { return !!this.gl; }
   private setup() { const gl = this.gl!; const p = gl.createProgram()!; gl.attachShader(p, compile(gl, gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl, gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) ?? 'link error'); this.program = p;
     this.vao = gl.createVertexArray(); this.buffer = gl.createBuffer(); gl.bindVertexArray(this.vao);
@@ -35,12 +35,22 @@ export class Renderer {
     const flat = this.art.flat, elevation = this.art.elevation, water = this.art.water; if (flat?.complete) { for (let x=0;x<WORLD_W;x+=128) for(let y=0;y<WORLD_H;y+=128) c.drawImage(flat, 0, 0, 128, 128, x, y, 128, 128); } if (water?.complete && this.chapter >= 1) { for (let x=0;x<640;x+=64) c.drawImage(water, x, 690, 64, 64); }
     for (let x = 45; x < WORLD_W; x += 105) for (let y = 35; y < WORLD_H; y += 95) { c.fillStyle = `rgba(112,164,96,${.045 + ((x * 11 + y * 7 + wave * 13) % 9) * .009})`; c.beginPath(); c.arc(x + ((y / 7 + wave * 3) % 18), y, 42, 0, Math.PI * 2); c.fill(); }
     const p = getPath(), castle = p[p.length - 1], castleX = Math.max(0, castle[0] - 238), castleY = Math.max(50, Math.min(WORLD_H - 210, castle[1] - 96)); c.lineCap = 'round'; c.lineJoin = 'round'; c.strokeStyle = '#27343b'; c.lineWidth = 132; c.beginPath(); c.moveTo(p[0][0], p[0][1]); for (let i = 1; i < p.length; i++) c.lineTo(p[i][0], p[i][1]); c.stroke(); c.strokeStyle = this.chapter >= 2 ? '#765544' : '#a77b4d'; c.lineWidth = 86; c.stroke(); c.strokeStyle = 'rgba(255,234,175,.22)'; c.lineWidth = 3; c.setLineDash([10, 14]); c.stroke(); c.setLineDash([]);
-    if (elevation?.complete) { for (let x=0;x<WORLD_W;x+=256) c.drawImage(elevation, 0, 0, 256, 220, x, 0, 256, 220); c.drawImage(elevation, 0, 0, 256, 220, 1450, 610, 256, 220); } if (this.art.bridge?.complete) c.drawImage(this.art.bridge, 0, 0, 192, 256, 915, 400, 170, 120); if(this.art.tree?.complete) for(let i=0;i<9+Math.floor(chapterStep/3);i++) c.drawImage(this.art.tree,0,0,128,128,40+i*185,90+((i+wave)%3)*190,92,92); if(this.art.castle?.complete) c.drawImage(this.art.castle,0,0,320,256,castleX,castleY,240,192); if(this.art.tower?.complete) { c.drawImage(this.art.tower,0,0,128,256,1330,150,96,192); c.drawImage(this.art.tower,0,0,128,256,1450,125,96,192); } if(this.art.fire?.complete && this.chapter>=2) c.drawImage(this.art.fire,0,0,128,128,castleX+58,castleY+122,80,80);
+    const scenery = [
+      { cliffs: [[0,0,1800,210],[1450,610,320,220]], bridges: [[915,400,170,120]], trees: [[150,145],[575,90],[790,640],[1215,110],[1540,700]] },
+      { cliffs: [[0,0,620,180],[960,0,840,155],[1020,610,720,220]], bridges: [[650,315,170,120],[1380,320,170,120]], trees: [[120,650],[450,130],[860,520],[1270,720],[1650,500]] },
+      { cliffs: [[0,0,390,250],[650,0,540,165],[1410,0,390,240]], bridges: [[510,570,170,120],[1185,560,170,120]], trees: [[160,310],[630,270],[1030,760],[1500,370]] },
+      { cliffs: [[0,0,1800,145],[0,640,720,230],[1290,650,510,220]], bridges: [[430,255,170,120],[875,505,170,120],[1460,290,170,120]], trees: [[120,530],[610,110],[1060,280],[1590,600]] },
+      { cliffs: [[0,0,520,270],[870,0,480,185],[1510,0,290,330],[0,610,440,250]], bridges: [[390,500,170,120],[1030,430,170,120],[1480,390,170,120]], trees: [[120,380],[720,650],[1270,720],[1690,170]] },
+    ][this.chapter] ?? { cliffs: [], bridges: [], trees: [] };
+    if (elevation?.complete) for (const [x,y,ww,hh] of scenery.cliffs) c.drawImage(elevation, 0, 0, 256, 220, x, y, ww, hh);
+    if (this.art.bridge?.complete) for (const [x,y,ww,hh] of scenery.bridges) c.drawImage(this.art.bridge, 0, 0, 192, 256, x, y, ww, hh);
+    if (this.art.tree?.complete) for (const [x,y] of scenery.trees) c.drawImage(this.art.tree, 0, 0, 128, 128, x, y, 96, 96);
+    if (this.art.castle?.complete) c.drawImage(this.art.castle,0,0,320,256,castleX,castleY,240,192); if(this.art.tower?.complete) { const posts = this.chapter % 2 ? [[1170,100],[1460,590]] : [[1330,150],[1450,125]]; for (const [x,y] of posts) c.drawImage(this.art.tower,0,0,128,256,x,y,96,192); } if(this.art.fire?.complete && this.chapter>=2) c.drawImage(this.art.fire,0,0,128,128,castleX+58,castleY+122,80,80);
     if (wave > 1) { c.globalAlpha = .05 + chapterStep * .012; c.fillStyle = this.chapter >= 2 ? '#321f1b' : '#d1b55d'; for (let i=0;i<7+chapterStep;i++) { const x = (i * 241 + wave * 97) % WORLD_W, y = 155 + ((i * 167 + wave * 53) % 610); c.fillRect(x, y, 34 + (i % 3) * 12, 3); } c.globalAlpha = 1; }
     const g = c.createRadialGradient(castle[0], castle[1], 3, castle[0], castle[1], 130); g.addColorStop(0, 'rgba(246,202,90,.9)'); g.addColorStop(.25, 'rgba(235,144,68,.4)'); g.addColorStop(1, 'rgba(235,144,68,0)'); c.fillStyle = g; c.beginPath(); c.arc(castle[0], castle[1], 130, 0, Math.PI * 2); c.fill(); c.restore(); }
   private emit(x: number, y: number, size: number, rgb: readonly number[], kind: number, alpha = 1) { if (this.count >= 9000) return; const o = this.count++ * 8; const d = this.data; d[o] = x; d[o + 1] = y; d[o + 2] = size; d[o + 3] = rgb[0]; d[o + 4] = rgb[1]; d[o + 5] = rgb[2]; d[o + 6] = alpha; d[o + 7] = kind; }
   render(engine: Engine, selected = -1, preview?: { kind: TowerKind; x: number; y: number; valid: boolean }, naive = false) {
-    this.setChapter(engine.wave);
+    this.setChapter(engine.levelIndex, engine.wave);
     this.count = 0;
     const simplified = engine.enemyCount > 360 || engine.projectileCount > 600;
     // Normal combat is sprite-only. Geometry is reserved for the extreme-load fallback.
@@ -77,6 +87,14 @@ export class Renderer {
       }
     }
     c.globalAlpha = 1;
+
+    // The gate has one persistent, readable integrity signal; it is the only dynamic castle UI.
+    const gate = getPath().at(-1)!, gateRatio = Math.max(0, engine.health) / 20;
+    const gateW = 106, gateH = 8, gateX = Math.max(10, Math.min(this.sprites.width - gateW - 10, gate[0] * sx - 142)), gateY = Math.max(12, gate[1] * sy - 104);
+    c.fillStyle = 'rgba(16, 27, 31, .84)'; c.fillRect(gateX - 3, gateY - 17, gateW + 6, gateH + 22);
+    c.fillStyle = '#f5e7bd'; c.font = 'bold 10px Georgia, serif'; c.fillText(`GATE ${Math.max(0, engine.health)} / 20`, gateX, gateY - 6);
+    c.fillStyle = '#462b2a'; c.fillRect(gateX, gateY, gateW, gateH);
+    c.fillStyle = gateRatio > .55 ? '#77bba2' : gateRatio > .25 ? '#e1ad4b' : '#e36a57'; c.fillRect(gateX, gateY, Math.round(gateW * gateRatio), gateH);
 
     const crew: Record<TowerKind, { image: string; cellW: number; idleRow: number; attackRow: number; insetX: number; insetY: number; width: number; height: number; drawW: number; drawH: number; trim: string }> = {
       bolt: { image: 'archer', cellW: 256, idleRow: 0, attackRow: 3, insetX: 42, insetY: 40, width: 172, height: 118, drawW: 96, drawH: 85, trim: '#f5c451' },
@@ -126,9 +144,25 @@ export class Renderer {
       { cellW: 192, cellH: 192, frames: 6, insetX: 24, insetY: 35, width: 144, height: 120, drawW: 76, drawH: 66 },
       { cellW: 192, cellH: 192, frames: 8, insetX: 24, insetY: 38, width: 144, height: 116, drawW: 76, drawH: 65 },
     ];
+    const breachSheets = [
+      { image: 'torchRed', cell: 192, cells: [[3,2],[4,2],[5,2],[6,2]], insetX: 24, insetY: 45, width: 144, height: 110, drawW: 82, drawH: 70 },
+      { image: 'barrelRed', cell: 128, cells: [[0,5],[1,5],[2,5]], insetX: 16, insetY: 18, width: 96, height: 96, drawW: 74, drawH: 68 },
+      { image: 'tntRed', cell: 192, cells: [[0,2],[1,2],[2,2],[3,2]], insetX: 24, insetY: 45, width: 144, height: 110, drawW: 82, drawH: 70 },
+      { image: 'warriorRed', cell: 192, cells: [[0,4],[1,4],[2,4],[3,4],[4,4],[5,4]], insetX: 24, insetY: 35, width: 144, height: 120, drawW: 86, drawH: 74 },
+      { image: 'archerRed', cell: 192, cells: [[0,3],[1,3],[2,3],[3,3],[4,3],[5,3]], insetX: 24, insetY: 38, width: 144, height: 116, drawW: 84, drawH: 72 },
+    ];
     for (let i = 0; i < engine.enemyActive.length; i++) if (engine.enemyActive[i]) {
       const type = engine.enemyType[i] as number, image = this.enemySpriteArt[type] ?? this.enemySpriteArt[0], sheet = sheets[type] ?? sheets[0];
       if (!image?.complete) continue;
+      if (engine.enemyBreach[i]) {
+        const breach = breachSheets[type] ?? breachSheets[0], attackImage = this.art[breach.image];
+        if (attackImage?.complete) {
+          const progress = 1 - engine.enemyBreachTime[i] / Math.max(.001, engine.enemyBreachDuration[i]);
+          const cell = breach.cells[Math.min(breach.cells.length - 1, Math.floor(progress * breach.cells.length))];
+          c.drawImage(attackImage, cell[0] * breach.cell + breach.insetX, cell[1] * breach.cell + breach.insetY, breach.width, breach.height, engine.enemyX[i] * sx - breach.drawW / 2, engine.enemyY[i] * sy - breach.drawH * .72, breach.drawW, breach.drawH);
+          continue;
+        }
+      }
       const frame = (tick + i % sheet.frames) % sheet.frames;
       c.drawImage(image, frame * sheet.cellW + sheet.insetX, sheet.insetY, sheet.width, sheet.height, engine.enemyX[i] * sx - sheet.drawW / 2, engine.enemyY[i] * sy - sheet.drawH * .72, sheet.drawW, sheet.drawH);
     }

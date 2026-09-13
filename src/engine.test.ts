@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Engine, LEVELS } from './engine';
+import { Engine, LEVELS, PATH_LENGTH } from './engine';
 
 describe('Arcane Bastion simulation', () => {
   it('starts a campaign wave and produces advancing enemies', () => {
@@ -54,6 +54,18 @@ describe('Arcane Bastion simulation', () => {
     expect(game.snapshot().towers).toBe(0);
     expect(game.snapshot().score).toBe(840);
     expect(game.snapshot().kills).toBe(37);
+  });
+
+  it('makes a raider breach the gate before dealing campaign damage', () => {
+    const game = new Engine();
+    game.startWave(); game.update(1 / 60);
+    const raider = game.enemyActive.findIndex(Boolean);
+    game.enemyDist[raider] = PATH_LENGTH - 1;
+    game.update(1 / 60);
+    expect(game.enemyBreach[raider]).toBe(1);
+    expect(game.snapshot().health).toBe(20);
+    for (let i = 0; i < 40; i++) game.update(1 / 60);
+    expect(game.snapshot().health).toBe(19);
   });
 
 });

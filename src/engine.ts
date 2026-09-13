@@ -81,6 +81,10 @@ export class Engine {
   readonly enemyMaxHp = new Float32Array(MAX_ENEMIES);
   readonly enemySlow = new Float32Array(MAX_ENEMIES);
   readonly enemySlowTime = new Float32Array(MAX_ENEMIES);
+  /** A raider has reached the gate and is playing its bounded breach attack. */
+  readonly enemyBreach = new Uint8Array(MAX_ENEMIES);
+  readonly enemyBreachTime = new Float32Array(MAX_ENEMIES);
+  readonly enemyBreachDuration = new Float32Array(MAX_ENEMIES);
   readonly nextInCell = new Int32Array(MAX_ENEMIES);
   readonly cellHead = new Int32Array(COLS * ROWS);
   readonly projectileActive = new Uint8Array(MAX_PROJECTILES);
@@ -109,7 +113,7 @@ export class Engine {
   constructor() { this.reset(); }
   reset() {
     this.levelIndex = 0; this.localWave = 0; configurePath(LEVELS[0].path);
-    this.enemyActive.fill(0); this.projectileActive.fill(0); this.effectActive.fill(0); this.enemyFree.length = 0; this.projectileFree.length = 0; this.effectFree.length = 0;
+    this.enemyActive.fill(0); this.enemyBreach.fill(0); this.projectileActive.fill(0); this.effectActive.fill(0); this.enemyFree.length = 0; this.projectileFree.length = 0; this.effectFree.length = 0;
     for (let i = MAX_ENEMIES - 1; i >= 0; i--) this.enemyFree.push(i);
     for (let i = MAX_PROJECTILES - 1; i >= 0; i--) this.projectileFree.push(i);
     for (let i = MAX_EFFECTS - 1; i >= 0; i--) this.effectFree.push(i);
@@ -121,7 +125,7 @@ export class Engine {
   getPath() { return path; }
   advanceLevel() { if (this.phase !== 'levelcomplete' || this.levelIndex >= LEVELS.length - 1) return false; this.levelIndex++; this.localWave = 0; this.resetLevelRuntime(); return true; }
   restartLevel() { this.score = this.levelStartScore; this.kills = this.levelStartKills; this.localWave = 0; this.resetLevelRuntime(); }
-  private resetLevelRuntime() { configurePath(LEVELS[this.levelIndex].path); this.enemyActive.fill(0); this.projectileActive.fill(0); this.effectActive.fill(0); this.enemyFree.length = this.projectileFree.length = this.effectFree.length = 0; for (let i=MAX_ENEMIES-1;i>=0;i--) this.enemyFree.push(i); for (let i=MAX_PROJECTILES-1;i>=0;i--) this.projectileFree.push(i); for (let i=MAX_EFFECTS-1;i>=0;i--) this.effectFree.push(i); this.towers.length=0; this.enemyCount=0; this.projectileCount=0; this.effectCount=0; this.health=20; this.gold=LEVELS[this.levelIndex].startingGold; this.spawnLeft=0; this.spawnTimer=0; this.spawning=false; this.phase='intro'; this.wave=this.levelIndex*10; this.levelStartScore=this.score; this.levelStartKills=this.kills; }
+  private resetLevelRuntime() { configurePath(LEVELS[this.levelIndex].path); this.enemyActive.fill(0); this.enemyBreach.fill(0); this.projectileActive.fill(0); this.effectActive.fill(0); this.enemyFree.length = this.projectileFree.length = this.effectFree.length = 0; for (let i=MAX_ENEMIES-1;i>=0;i--) this.enemyFree.push(i); for (let i=MAX_PROJECTILES-1;i>=0;i--) this.projectileFree.push(i); for (let i=MAX_EFFECTS-1;i>=0;i--) this.effectFree.push(i); this.towers.length=0; this.enemyCount=0; this.projectileCount=0; this.effectCount=0; this.health=20; this.gold=LEVELS[this.levelIndex].startingGold; this.spawnLeft=0; this.spawnTimer=0; this.spawning=false; this.phase='intro'; this.wave=this.levelIndex*10; this.levelStartScore=this.score; this.levelStartKills=this.kills; }
   startWave() {
     if (this.phase === 'gameover' || this.phase === 'victory' || this.phase === 'levelcomplete' || this.spawning || this.enemyCount) return;
     this.phase = 'playing'; this.localWave++; this.wave = this.levelIndex * 10 + this.localWave; this.spawnLeft = 7 + this.wave * 3 + Math.floor(this.wave * this.wave / 7);
@@ -176,17 +180,29 @@ export class Engine {
     const id = this.enemyFree.pop(); if (id === undefined) return;
     const s = enemyStats[kind]; const scale = this.benchmark ? 1 : 1 + Math.max(0, this.wave - 1) * .115;
     this.enemyActive[id] = 1; this.enemyType[id] = kind; this.enemyDist[id] = initialDistance; this.enemyHp[id] = this.enemyMaxHp[id] = s.hp * scale;
-    const [x, y] = pathPosition(initialDistance); this.enemyX[id] = x; this.enemyY[id] = y; this.enemySlow[id] = 0; this.enemySlowTime[id] = 0; this.enemyCount++;
+    const [x, y] = pathPosition(initialDistance); this.enemyX[id] = x; this.enemyY[id] = y; this.enemySlow[id] = 0; this.enemySlowTime[id] = 0; this.enemyBreach[id] = 0; this.enemyBreachTime[id] = 0; this.enemyBreachDuration[id] = 0; this.enemyCount++;
   }
   private updateEnemies(dt: number) {
     for (let i = 0; i < MAX_ENEMIES; i++) if (this.enemyActive[i]) {
       const type = this.enemyType[i] as EnemyKind; const s = enemyStats[type];
+      if (this.enemyBreach[i]) {
+        this.enemyBreachTime[i] -= dt;
+        if (this.enemyBreachTime[i] <= 0) {
+          const [castleX, castleY] = pathPosition(PATH_LENGTH);
+          this.spawnEffect(type === 2 ? 1 : 3, castleX, castleY, type === 2 ? .48 : .32);
+          this.releaseEnemy(i); this.health -= s.base;
+        }
+        continue;
+      }
       if (this.enemySlowTime[i] > 0) { this.enemySlowTime[i] -= dt; } else this.enemySlow[i] = 0;
       this.enemyDist[i] += s.speed * (1 - this.enemySlow[i]) * dt;
       if (this.enemyDist[i] >= PATH_LENGTH) {
-        const [castleX, castleY] = pathPosition(PATH_LENGTH);
-        this.spawnEffect(1, castleX, castleY, .42);
-        this.releaseEnemy(i); this.health -= s.base; continue;
+        // Stress mode remains a pure movement benchmark. Campaign raiders visibly breach the gate first.
+        if (this.benchmark) { this.releaseEnemy(i); this.health -= s.base; continue; }
+        const [castleX, castleY] = pathPosition(PATH_LENGTH), lane = i % 3 - 1;
+        this.enemyDist[i] = PATH_LENGTH; this.enemyX[i] = castleX - 22; this.enemyY[i] = castleY + lane * 20;
+        const duration = type === 0 ? .42 : type === 1 ? .32 : type === 2 ? .26 : type === 3 ? .5 : .62;
+        this.enemyBreach[i] = 1; this.enemyBreachTime[i] = duration; this.enemyBreachDuration[i] = duration; continue;
       }
       const [x, y] = pathPosition(this.enemyDist[i]); this.enemyX[i] = x; this.enemyY[i] = y;
     }
@@ -218,7 +234,7 @@ export class Engine {
   private hit(id: number, damage: number, slow: number) { if (!this.enemyActive[id]) return; const s = enemyStats[this.enemyType[id] as EnemyKind]; const shielded = this.enemyType[id] === 3 && this.enemyHp[id] > this.enemyMaxHp[id] * .55; this.enemyHp[id] -= Math.max(1, damage - s.armor) * (shielded ? .55 : 1); if (slow) { this.enemySlow[id] = Math.max(this.enemySlow[id], slow); this.enemySlowTime[id] = Math.max(this.enemySlowTime[id], 1.25); } if (this.enemyHp[id] <= 0) { const kind = this.enemyType[id] as EnemyKind, x = this.enemyX[id], y = this.enemyY[id]; this.gold += s.reward; this.score += Math.round(s.reward * 10); this.kills++; const dist = this.enemyDist[id]; this.spawnEffect(3, x, y, .36); this.releaseEnemy(id); if (kind === 2) { this.spawnEnemy(0, dist); this.spawnEnemy(0, dist); } } }
   private spawnEffect(kind: number, x: number, y: number, duration: number) { const id = this.effectFree.pop(); if (id === undefined) return; this.effectActive[id] = 1; this.effectKind[id] = kind; this.effectX[id] = x; this.effectY[id] = y; this.effectLife[id] = duration; this.effectDuration[id] = duration; this.effectCount++; }
   private updateEffects(dt: number) { for (let i = 0; i < MAX_EFFECTS; i++) if (this.effectActive[i]) { this.effectLife[i] -= dt; if (this.effectLife[i] <= 0) { this.effectActive[i] = 0; this.effectFree.push(i); this.effectCount--; } } }
-  private releaseEnemy(id: number) { if (!this.enemyActive[id]) return; this.enemyActive[id] = 0; this.enemyFree.push(id); this.enemyCount--; }
+  private releaseEnemy(id: number) { if (!this.enemyActive[id]) return; this.enemyActive[id] = 0; this.enemyBreach[id] = 0; this.enemyFree.push(id); this.enemyCount--; }
   private releaseProjectile(id: number) { this.projectileActive[id] = 0; this.projectileFree.push(id); this.projectileCount--; }
   private random() { this.seed = (this.seed * 1664525 + 1013904223) >>> 0; return this.seed / 4294967296; }
 }
