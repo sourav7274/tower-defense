@@ -21,6 +21,16 @@ describe('Arcane Bastion simulation', () => {
     expect(game.snapshot().towers).toBe(0);
   });
 
+  it('uses bounded combat effect state when a placed defense fires', () => {
+    const game = new Engine();
+    expect(game.placeTower('bolt', 250, 120)).toBe(true);
+    game.startWave();
+    let sawEffect = false;
+    for (let i = 0; i < 480; i++) { game.update(1 / 60); sawEffect ||= game.effectCount > 0; }
+    expect(sawEffect).toBe(true);
+    expect(game.effectCount).toBeLessThanOrEqual(768);
+  });
+
   it('provisions the required stress scenario with pooled active entities', () => {
     const game = new Engine();
     game.setupBenchmark(false, 5000, 100, 1000);

@@ -2,6 +2,7 @@ export const WORLD_W = 1800;
 export const WORLD_H = 900;
 const MAX_ENEMIES = 6000;
 const MAX_PROJECTILES = 1800;
+const MAX_EFFECTS = 768;
 const CELL = 72;
 const COLS = Math.ceil(WORLD_W / CELL);
 const ROWS = Math.ceil(WORLD_H / CELL);
@@ -10,7 +11,7 @@ export type TowerKind = 'bolt' | 'mortar' | 'frost';
 export type GamePhase = 'intro' | 'playing' | 'victory' | 'gameover';
 export type EnemyKind = 0 | 1 | 2 | 3 | 4;
 
-export interface Tower { x: number; y: number; kind: TowerKind; level: number; cooldown: number; spent: number; }
+export interface Tower { x: number; y: number; kind: TowerKind; level: number; cooldown: number; attackTime: number; spent: number; }
 export interface GameSnapshot {
   phase: GamePhase; wave: number; health: number; gold: number; score: number; kills: number;
   enemies: number; projectiles: number; towers: number; spawning: boolean; remaining: number;
@@ -71,20 +72,27 @@ export class Engine {
   readonly projectileSplash = new Float32Array(MAX_PROJECTILES);
   readonly projectileSlow = new Float32Array(MAX_PROJECTILES);
   readonly projectileColor = new Uint8Array(MAX_PROJECTILES);
+  readonly effectActive = new Uint8Array(MAX_EFFECTS);
+  readonly effectKind = new Uint8Array(MAX_EFFECTS);
+  readonly effectX = new Float32Array(MAX_EFFECTS);
+  readonly effectY = new Float32Array(MAX_EFFECTS);
+  readonly effectLife = new Float32Array(MAX_EFFECTS);
+  readonly effectDuration = new Float32Array(MAX_EFFECTS);
   readonly towers: Tower[] = [];
   readonly enemyFree: number[] = [];
-  readonly projectileFree: number[] = [];
+  readonly projectileFree: number[] = []; readonly effectFree: number[] = [];
   phase: GamePhase = 'intro'; wave = 0; health = 20; gold = 500; score = 0; kills = 0;
-  enemyCount = 0; projectileCount = 0; spawnLeft = 0; spawnTimer = 0; spawning = false;
+  enemyCount = 0; projectileCount = 0; effectCount = 0; spawnLeft = 0; spawnTimer = 0; spawning = false;
   private benchmark = false; private naive = false; private seed = 1;
 
   constructor() { this.reset(); }
   reset() {
-    this.enemyActive.fill(0); this.projectileActive.fill(0); this.enemyFree.length = 0; this.projectileFree.length = 0;
+    this.enemyActive.fill(0); this.projectileActive.fill(0); this.effectActive.fill(0); this.enemyFree.length = 0; this.projectileFree.length = 0; this.effectFree.length = 0;
     for (let i = MAX_ENEMIES - 1; i >= 0; i--) this.enemyFree.push(i);
     for (let i = MAX_PROJECTILES - 1; i >= 0; i--) this.projectileFree.push(i);
+    for (let i = MAX_EFFECTS - 1; i >= 0; i--) this.effectFree.push(i);
     this.towers.length = 0; this.phase = 'intro'; this.wave = 0; this.health = 20; this.gold = 500; this.score = 0; this.kills = 0;
-    this.enemyCount = 0; this.projectileCount = 0; this.spawnLeft = 0; this.spawnTimer = 0; this.spawning = false; this.benchmark = false; this.seed = 1;
+    this.enemyCount = 0; this.projectileCount = 0; this.effectCount = 0; this.spawnLeft = 0; this.spawnTimer = 0; this.spawning = false; this.benchmark = false; this.seed = 1;
   }
   snapshot(): GameSnapshot { return { phase: this.phase, wave: this.wave, health: this.health, gold: this.gold, score: this.score, kills: this.kills, enemies: this.enemyCount, projectiles: this.projectileCount, towers: this.towers.length, spawning: this.spawning, remaining: this.spawnLeft }; }
   startWave() {
@@ -95,7 +103,7 @@ export class Engine {
   placeTower(kind: TowerKind, x: number, y: number): boolean {
     const s = towerStats[kind];
     if (this.gold < s.cost || this.towers.length >= 100 || !this.validPad(x, y)) return false;
-    this.gold -= s.cost; this.towers.push({ x, y, kind, level: 1, cooldown: .15, spent: s.cost }); return true;
+    this.gold -= s.cost; this.towers.push({ x, y, kind, level: 1, cooldown: .15, attackTime: 0, spent: s.cost }); return true;
   }
   upgradeTower(index: number): boolean {
     const t = this.towers[index]; if (!t || t.level >= 3) return false;
@@ -117,7 +125,7 @@ export class Engine {
   setupBenchmark(naive: boolean, enemies = 5000, towers = 100, projectiles = 1000) {
     this.reset(); this.benchmark = true; this.naive = naive; this.phase = 'playing'; this.health = 9999; this.gold = 99999; this.wave = 50;
     const kinds: TowerKind[] = ['bolt', 'mortar', 'frost'];
-    for (let i = 0; i < towers; i++) { const x = 110 + (i % 20) * 82; const y = i % 2 ? 130 + Math.floor(i / 20) * 135 : 740 - Math.floor(i / 20) * 105; this.towers.push({ x, y, kind: kinds[i % 3], level: 3, cooldown: (i % 9) * .04, spent: 500 }); }
+    for (let i = 0; i < towers; i++) { const x = 110 + (i % 20) * 82; const y = i % 2 ? 130 + Math.floor(i / 20) * 135 : 740 - Math.floor(i / 20) * 105; this.towers.push({ x, y, kind: kinds[i % 3], level: 3, cooldown: (i % 9) * .04, attackTime: 0, spent: 500 }); }
     for (let i = 0; i < enemies; i++) this.spawnEnemy((i % 5) as EnemyKind, 40 + (i % 860));
     this.rebuildGrid();
     for (let i = 0; i < projectiles; i++) { const target = i % Math.max(1, enemies); this.spawnProjectile(700 + (i % 13) * 20, 350 + (i % 17) * 12, target, 9, 600, i % 3 === 1 ? 58 : 0, i % 3 === 2 ? .3 : 0, i % 3); }
@@ -125,7 +133,7 @@ export class Engine {
   update(dt: number) {
     if (this.phase !== 'playing') return;
     if (this.spawning) { this.spawnTimer -= dt; while (this.spawnLeft > 0 && this.spawnTimer <= 0) { this.spawnWaveEnemy(); this.spawnLeft--; this.spawnTimer += Math.max(.095, .38 - this.wave * .004); } if (!this.spawnLeft) this.spawning = false; }
-    this.updateEnemies(dt); this.rebuildGrid(); this.updateTowers(dt); this.updateProjectiles(dt);
+    this.updateEnemies(dt); this.rebuildGrid(); this.updateTowers(dt); this.updateProjectiles(dt); this.updateEffects(dt);
     if (!this.benchmark && !this.spawning && this.enemyCount === 0 && this.wave >= 50) this.phase = 'victory';
     if (this.health <= 0) this.phase = 'gameover';
   }
@@ -157,8 +165,8 @@ export class Engine {
     for (let i = 0; i < MAX_ENEMIES; i++) if (this.enemyActive[i]) { const c = Math.min(COLS - 1, Math.max(0, (this.enemyX[i] / CELL) | 0)); const r = Math.min(ROWS - 1, Math.max(0, (this.enemyY[i] / CELL) | 0)); const cell = r * COLS + c; this.nextInCell[i] = this.cellHead[cell]; this.cellHead[cell] = i; }
   }
   private updateTowers(dt: number) {
-    for (const t of this.towers) { t.cooldown -= dt; if (t.cooldown > 0) continue; const s = towerStats[t.kind]; const target = this.findTarget(t.x, t.y, s.range); if (target < 0) continue;
-      const mult = 1 + (t.level - 1) * .55; t.cooldown += s.reload / (1 + (t.level - 1) * .12); this.spawnProjectile(t.x, t.y, target, s.damage * mult, s.speed * (1 + (t.level - 1) * .08), s.splash * (1 + (t.level - 1) * .2), t.kind === 'frost' ? .36 + t.level * .05 : 0, t.kind === 'bolt' ? 0 : t.kind === 'mortar' ? 1 : 2); }
+    for (const t of this.towers) { t.attackTime = Math.max(0, t.attackTime - dt); t.cooldown -= dt; if (t.cooldown > 0) continue; const s = towerStats[t.kind]; const target = this.findTarget(t.x, t.y, s.range); if (target < 0) continue;
+      const mult = 1 + (t.level - 1) * .55; t.cooldown += s.reload / (1 + (t.level - 1) * .12); t.attackTime = t.kind === 'mortar' ? .32 : .22; this.spawnProjectile(t.x, t.y, target, s.damage * mult, s.speed * (1 + (t.level - 1) * .08), s.splash * (1 + (t.level - 1) * .2), t.kind === 'frost' ? .36 + t.level * .05 : 0, t.kind === 'bolt' ? 0 : t.kind === 'mortar' ? 1 : 2); }
   }
   private findTarget(x: number, y: number, range: number): number {
     let best = -1; let farthest = -Infinity; const r2 = range * range;
@@ -172,11 +180,13 @@ export class Engine {
   }
   private updateProjectiles(dt: number) {
     for (let i = 0; i < MAX_PROJECTILES; i++) if (this.projectileActive[i]) { const target = this.projectileTarget[i]; if (!this.enemyActive[target]) { this.releaseProjectile(i); continue; } const dx = this.enemyX[target] - this.projectileX[i], dy = this.enemyY[target] - this.projectileY[i]; const d = Math.hypot(dx, dy); const travel = this.projectileSpeed[i] * dt;
-      if (d <= travel + 8) { this.hit(target, this.projectileDamage[i], this.projectileSlow[i]); if (this.projectileSplash[i]) this.splash(this.enemyX[target], this.enemyY[target], this.projectileSplash[i], this.projectileDamage[i] * .65, this.projectileSlow[i]); this.releaseProjectile(i); } else { this.projectileX[i] += dx / d * travel; this.projectileY[i] += dy / d * travel; }
+      if (d <= travel + 8) { const x = this.enemyX[target], y = this.enemyY[target], kind = this.projectileColor[i]; this.hit(target, this.projectileDamage[i], this.projectileSlow[i]); if (this.projectileSplash[i]) this.splash(x, y, this.projectileSplash[i], this.projectileDamage[i] * .65, this.projectileSlow[i]); this.spawnEffect(kind === 1 ? 1 : kind === 2 ? 2 : 0, x, y, kind === 1 ? .42 : .18); this.releaseProjectile(i); } else { this.projectileX[i] += dx / d * travel; this.projectileY[i] += dy / d * travel; }
     }
   }
   private splash(x: number, y: number, radius: number, damage: number, slow: number) { const cx = (x / CELL) | 0, cy = (y / CELL) | 0, cr = Math.ceil(radius / CELL), r2 = radius * radius; for (let yy = Math.max(0, cy - cr); yy <= Math.min(ROWS - 1, cy + cr); yy++) for (let xx = Math.max(0, cx - cr); xx <= Math.min(COLS - 1, cx + cr); xx++) for (let i = this.cellHead[yy * COLS + xx]; i >= 0; i = this.nextInCell[i]) { const dx = this.enemyX[i] - x, dy = this.enemyY[i] - y; if (dx * dx + dy * dy <= r2) this.hit(i, damage, slow); } }
-  private hit(id: number, damage: number, slow: number) { if (!this.enemyActive[id]) return; const s = enemyStats[this.enemyType[id] as EnemyKind]; const shielded = this.enemyType[id] === 3 && this.enemyHp[id] > this.enemyMaxHp[id] * .55; this.enemyHp[id] -= Math.max(1, damage - s.armor) * (shielded ? .55 : 1); if (slow) { this.enemySlow[id] = Math.max(this.enemySlow[id], slow); this.enemySlowTime[id] = Math.max(this.enemySlowTime[id], 1.25); } if (this.enemyHp[id] <= 0) { const kind = this.enemyType[id] as EnemyKind; this.gold += s.reward; this.score += Math.round(s.reward * 10); this.kills++; const dist = this.enemyDist[id]; this.releaseEnemy(id); if (kind === 2) { this.spawnEnemy(0, dist); this.spawnEnemy(0, dist); } } }
+  private hit(id: number, damage: number, slow: number) { if (!this.enemyActive[id]) return; const s = enemyStats[this.enemyType[id] as EnemyKind]; const shielded = this.enemyType[id] === 3 && this.enemyHp[id] > this.enemyMaxHp[id] * .55; this.enemyHp[id] -= Math.max(1, damage - s.armor) * (shielded ? .55 : 1); if (slow) { this.enemySlow[id] = Math.max(this.enemySlow[id], slow); this.enemySlowTime[id] = Math.max(this.enemySlowTime[id], 1.25); } if (this.enemyHp[id] <= 0) { const kind = this.enemyType[id] as EnemyKind, x = this.enemyX[id], y = this.enemyY[id]; this.gold += s.reward; this.score += Math.round(s.reward * 10); this.kills++; const dist = this.enemyDist[id]; this.spawnEffect(3, x, y, .36); this.releaseEnemy(id); if (kind === 2) { this.spawnEnemy(0, dist); this.spawnEnemy(0, dist); } } }
+  private spawnEffect(kind: number, x: number, y: number, duration: number) { const id = this.effectFree.pop(); if (id === undefined) return; this.effectActive[id] = 1; this.effectKind[id] = kind; this.effectX[id] = x; this.effectY[id] = y; this.effectLife[id] = duration; this.effectDuration[id] = duration; this.effectCount++; }
+  private updateEffects(dt: number) { for (let i = 0; i < MAX_EFFECTS; i++) if (this.effectActive[i]) { this.effectLife[i] -= dt; if (this.effectLife[i] <= 0) { this.effectActive[i] = 0; this.effectFree.push(i); this.effectCount--; } } }
   private releaseEnemy(id: number) { if (!this.enemyActive[id]) return; this.enemyActive[id] = 0; this.enemyFree.push(id); this.enemyCount--; }
   private releaseProjectile(id: number) { this.projectileActive[id] = 0; this.projectileFree.push(id); this.projectileCount--; }
   private random() { this.seed = (this.seed * 1664525 + 1013904223) >>> 0; return this.seed / 4294967296; }

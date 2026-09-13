@@ -14,13 +14,13 @@ export class Renderer {
   private gl: WebGL2RenderingContext | null; private program: WebGLProgram | null = null; private vao: WebGLVertexArrayObject | null = null; private buffer: WebGLBuffer | null = null;
   private data = new Float32Array(9000 * 8); private count = 0; private fallback: CanvasRenderingContext2D | null = null; private baselineCtx!: CanvasRenderingContext2D;
   private chapter = -1; private art: Record<string, HTMLImageElement> = {};
-  private spriteCtx: CanvasRenderingContext2D; private defenderSpriteArt: Partial<Record<TowerKind, HTMLImageElement>> = {}; private enemySpriteArt: HTMLImageElement[] = [];
+  private spriteCtx: CanvasRenderingContext2D; private enemySpriteArt: HTMLImageElement[] = [];
   constructor(private canvas: HTMLCanvasElement, private map: HTMLCanvasElement, private sprites: HTMLCanvasElement, private baseline: HTMLCanvasElement) {
     this.gl = canvas.getContext('webgl2', { alpha: true, antialias: false, premultipliedAlpha: true });
     if (this.gl) this.setup(); else this.fallback = canvas.getContext('2d');
     this.spriteCtx = sprites.getContext('2d')!; new ResizeObserver(() => this.resize()).observe(canvas.parentElement!); this.loadArt(); this.resize();
   }
-  private loadArt() { for (const [key, file] of Object.entries({ flat:'Tilemap_Flat.png', elevation:'Tilemap_Elevation.png', bridge:'Bridge_All.png', water:'Water.png', tree:'Tree.png', castle:'Castle_Blue.png', tower:'Tower_Blue.png', fire:'Fire.png' })) { const image = new Image(); image.src = `/assets/${file}`; image.onload = () => this.drawMap(); this.art[key] = image; } for(const [kind,file] of Object.entries({ bolt:'defender-longbow-ready.png', mortar:'defender-engineer-ready.png', frost:'defender-shield-ready.png' }) as [TowerKind,string][]) { const image = new Image(); image.src=`/assets/${file}`; this.defenderSpriteArt[kind] = image; } for(const file of ['enemy-torch-walk.png','enemy-barrel-walk.png','enemy-tnt-walk.png','enemy-warrior-walk.png','enemy-archer-walk.png']) { const image = new Image(); image.src=`/assets/${file}`; this.enemySpriteArt.push(image); } }
+  private loadArt() { for (const [key, file] of Object.entries({ flat:'Tilemap_Flat.png', elevation:'Tilemap_Elevation.png', bridge:'Bridge_All.png', water:'Water.png', tree:'Tree.png', castle:'Castle_Blue.png', tower:'Tower_Blue.png', fire:'Fire.png', arrow:'Arrow.png', explosion:'Explosions.png', archer:'Archer_Blue.png', pawn:'Pawn_Blue.png', warrior:'Warrior_Blue.png' })) { const image = new Image(); image.src = `/assets/${file}`; image.onload = () => this.drawMap(); this.art[key] = image; } for(const file of ['enemy-torch-walk.png','enemy-barrel-walk.png','enemy-tnt-walk.png','enemy-warrior-walk.png','enemy-archer-walk.png']) { const image = new Image(); image.src=`/assets/${file}`; this.enemySpriteArt.push(image); } }
   private setChapter(wave: number) { const next = Math.min(4, Math.floor(Math.max(0, wave - 1) / 10)); if (next !== this.chapter) { this.chapter = next; this.drawMap(); } }
   get accelerated() { return !!this.gl; }
   private setup() { const gl = this.gl!; const p = gl.createProgram()!; gl.attachShader(p, compile(gl, gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl, gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) ?? 'link error'); this.program = p;
@@ -41,15 +41,84 @@ export class Renderer {
   render(engine: Engine, selected = -1, preview?: { kind: TowerKind; x: number; y: number; valid: boolean }, naive = false) {
     this.setChapter(engine.wave);
     this.count = 0;
-    // Troops are painted on the sprite layer. Do not leave the old geometric tower diamonds beneath them.
-    for (let i = 0; i < engine.enemyActive.length; i++) if (engine.enemyActive[i]) { const info = enemyInfo[engine.enemyType[i] as 0|1|2|3|4]; this.emit(engine.enemyX[i], engine.enemyY[i], info.size, info.color, 0); }
-    for (let i = 0; i < engine.projectileActive.length; i++) if (engine.projectileActive[i]) { const col = engine.projectileColor[i] === 0 ? [245, 204, 92] : engine.projectileColor[i] === 1 ? [240, 109, 69] : [120, 216, 232]; this.emit(engine.projectileX[i], engine.projectileY[i], 5, col, 0); }
+    const simplified = engine.enemyCount > 360 || engine.projectileCount > 600;
+    // Normal combat is sprite-only. Geometry is reserved for the extreme-load fallback.
+    if (simplified) {
+      for (let i = 0; i < engine.enemyActive.length; i++) if (engine.enemyActive[i]) { const info = enemyInfo[engine.enemyType[i] as 0|1|2|3|4]; this.emit(engine.enemyX[i], engine.enemyY[i], info.size, info.color, 0); }
+      for (let i = 0; i < engine.projectileActive.length; i++) if (engine.projectileActive[i]) { const col = engine.projectileColor[i] === 0 ? [245, 204, 92] : engine.projectileColor[i] === 1 ? [240, 109, 69] : [120, 216, 232]; this.emit(engine.projectileX[i], engine.projectileY[i], 5, col, 0); }
+    }
     if (preview) { this.emit(preview.x, preview.y, towerInfo[preview.kind].range, preview.valid ? [134, 209, 149] : [237, 91, 80], 2, .11); this.emit(preview.x, preview.y, 25, towerInfo[preview.kind].color, 1, preview.valid ? .8 : .3); }
     if (naive) { this.canvas.style.opacity = '0'; this.sprites.style.opacity='0'; this.baseline.style.opacity = '1'; this.drawNaive(engine); }
     else { this.canvas.style.opacity = '1'; this.sprites.style.opacity='1'; this.baseline.style.opacity = '0'; if (this.gl) this.drawGL(); else this.drawFallback(engine); this.drawSprites(engine); }
   }
   private drawGL() { const gl = this.gl!; gl.viewport(0, 0, this.canvas.width, this.canvas.height); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); gl.useProgram(this.program); gl.uniform2f(gl.getUniformLocation(this.program!, 'world'), WORLD_W, WORLD_H); gl.bindVertexArray(this.vao); gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer); gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.data.subarray(0, this.count * 8)); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, this.count); gl.bindVertexArray(null); }
   private drawFallback(engine: Engine) { const c = this.fallback!; c.clearRect(0, 0, this.canvas.width, this.canvas.height); const sx = this.canvas.width / WORLD_W, sy = this.canvas.height / WORLD_H; for (let i = 0; i < this.count; i++) { const o = i * 8, d = this.data; c.globalAlpha = d[o+6]; c.fillStyle = `rgb(${d[o+3]},${d[o+4]},${d[o+5]})`; c.beginPath(); c.arc(d[o]*sx, d[o+1]*sy, d[o+2]*sx, 0, Math.PI*2); c.fill(); } c.globalAlpha = 1; }
-  private drawSprites(engine: Engine) { const c=this.spriteCtx, sx=this.sprites.width/WORLD_W, sy=this.sprites.height/WORLD_H, tick=Math.floor(performance.now()/90); c.clearRect(0,0,this.sprites.width,this.sprites.height); c.imageSmoothingEnabled=false; const defenderSheets: Record<TowerKind,{cellW:number;cellH:number;frames:number;insetX:number;insetY:number;w:number;h:number;dw:number;dh:number}>={bolt:{cellW:256,cellH:191,frames:6,insetX:42,insetY:42,w:172,h:116,dw:78,dh:66},mortar:{cellW:192,cellH:192,frames:6,insetX:24,insetY:42,w:144,h:112,dw:76,dh:66},frost:{cellW:192,cellH:192,frames:6,insetX:24,insetY:34,w:144,h:124,dw:78,dh:68}}; for(let i=0;i<engine.towers.length;i++){const troop=engine.towers[i],image=this.defenderSpriteArt[troop.kind],sheet=defenderSheets[troop.kind]; if(image?.complete){const frameIndex=(Math.floor(tick/2)+i%sheet.frames)%sheet.frames; const sourceX=frameIndex*sheet.cellW+sheet.insetX; c.drawImage(image,sourceX,sheet.insetY,sheet.w,sheet.h,troop.x*sx-sheet.dw/2,troop.y*sy-sheet.dh*.74,sheet.dw,sheet.dh);}} const sheets=[{cellW:192,cellH:192,frames:7,insetX:24,insetY:45,w:144,h:110,dw:76,dh:64},{cellW:128,cellH:128,frames:6,insetX:16,insetY:22,w:96,h:88,dw:70,dh:64},{cellW:192,cellH:192,frames:7,insetX:24,insetY:45,w:144,h:110,dw:76,dh:64},{cellW:192,cellH:192,frames:6,insetX:24,insetY:35,w:144,h:120,dw:76,dh:66},{cellW:192,cellH:192,frames:8,insetX:24,insetY:38,w:144,h:116,dw:76,dh:65}]; let shown=0; for(let i=0;i<engine.enemyActive.length&&shown<360;i++) if(engine.enemyActive[i]) { const type=engine.enemyType[i] as number, image=this.enemySpriteArt[type]??this.enemySpriteArt[0], sheet=sheets[type]??sheets[0]; if(image?.complete) { const frameIndex=(tick+i%sheet.frames)%sheet.frames; const sourceX=frameIndex*sheet.cellW+sheet.insetX; c.drawImage(image,sourceX,sheet.insetY,sheet.w,sheet.h,engine.enemyX[i]*sx-sheet.dw/2,engine.enemyY[i]*sy-sheet.dh*.72,sheet.dw,sheet.dh); } shown++; } }
+  private drawSprites(engine: Engine) {
+    const c = this.spriteCtx, sx = this.sprites.width / WORLD_W, sy = this.sprites.height / WORLD_H;
+    const tick = Math.floor(performance.now() / 90);
+    c.clearRect(0, 0, this.sprites.width, this.sprites.height);
+    c.imageSmoothingEnabled = false;
+
+    // Effects are pooled by the engine and expire at the fixed simulation rate.
+    const explosion = this.art.explosion;
+    for (let i = 0; i < engine.effectActive.length; i++) if (engine.effectActive[i]) {
+      const life = engine.effectLife[i] / engine.effectDuration[i], progress = 1 - life;
+      const x = engine.effectX[i] * sx, y = engine.effectY[i] * sy, kind = engine.effectKind[i];
+      if ((kind === 1 || kind === 3) && explosion?.complete) {
+        const frame = Math.min(8, Math.floor(progress * 9)); const size = kind === 1 ? 74 : 54;
+        c.globalAlpha = Math.min(1, life * 2.3); c.drawImage(explosion, frame * 192, 0, 192, 192, x - size / 2, y - size / 2, size, size);
+      } else if (kind === 2) {
+        const radius = 10 + progress * 18; c.globalAlpha = life; c.strokeStyle = '#8de8ff'; c.lineWidth = 3;
+        c.beginPath(); c.arc(x, y, radius, 0, Math.PI * 2); c.stroke();
+      } else {
+        const radius = 7 + progress * 9; c.globalAlpha = life; c.strokeStyle = '#ffe4a6'; c.lineWidth = 2;
+        c.beginPath(); c.moveTo(x - radius, y); c.lineTo(x + radius, y); c.moveTo(x, y - radius); c.lineTo(x, y + radius); c.stroke();
+      }
+    }
+    c.globalAlpha = 1;
+
+    const crew: Record<TowerKind, { image: string; cellW: number; idleRow: number; attackRow: number; insetX: number; insetY: number; width: number; height: number; drawW: number; drawH: number; trim: string }> = {
+      bolt: { image: 'archer', cellW: 256, idleRow: 0, attackRow: 3, insetX: 42, insetY: 40, width: 172, height: 118, drawW: 76, drawH: 66, trim: '#f5c451' },
+      mortar: { image: 'pawn', cellW: 192, idleRow: 0, attackRow: 3, insetX: 24, insetY: 40, width: 144, height: 116, drawW: 74, drawH: 66, trim: '#f06d45' },
+      frost: { image: 'warrior', cellW: 192, idleRow: 0, attackRow: 2, insetX: 24, insetY: 32, width: 144, height: 126, drawW: 78, drawH: 69, trim: '#78d8e8' },
+    };
+    for (let i = 0; i < engine.towers.length; i++) {
+      const tower = engine.towers[i], spec = crew[tower.kind], image = this.art[spec.image], x = tower.x * sx, y = tower.y * sy;
+      if (this.art.tower?.complete) c.drawImage(this.art.tower, 0, 0, 128, 256, x - 43, y - 116, 86, 172);
+      c.fillStyle = spec.trim; c.fillRect(x - 29, y - 106, 6, 36);
+      if (!image?.complete) continue;
+      const attacking = tower.attackTime > 0, frame = attacking ? Math.min(5, Math.floor((.34 - tower.attackTime) * 18)) : 0;
+      const row = attacking ? spec.attackRow : spec.idleRow;
+      c.drawImage(image, frame * spec.cellW + spec.insetX, row * 192 + spec.insetY, spec.width, spec.height, x - spec.drawW / 2, y - 132, spec.drawW, spec.drawH);
+    }
+
+    const drawProjectiles = engine.projectileCount <= 600;
+    if (drawProjectiles) for (let i = 0; i < engine.projectileActive.length; i++) if (engine.projectileActive[i]) {
+      const x = engine.projectileX[i] * sx, y = engine.projectileY[i] * sy, kind = engine.projectileColor[i];
+      if (kind === 0 && this.art.arrow?.complete) {
+        const target = engine.projectileTarget[i], dx = engine.enemyActive[target] ? engine.enemyX[target] * sx - x : 1, dy = engine.enemyActive[target] ? engine.enemyY[target] * sy - y : 0;
+        c.save(); c.translate(x, y); c.rotate(Math.atan2(dy, dx) + Math.PI / 2); c.drawImage(this.art.arrow, 0, 0, 64, 128, -7, -16, 14, 28); c.restore();
+      } else if (kind === 1 && explosion?.complete) {
+        c.drawImage(explosion, 0, 0, 192, 192, x - 10, y - 10, 20, 20);
+      } else {
+        c.strokeStyle = '#8de8ff'; c.lineWidth = 3; c.beginPath(); c.arc(x, y, 9, 0, Math.PI * 2); c.stroke();
+      }
+    }
+
+    if (engine.enemyCount > 360) return;
+    const sheets = [
+      { cellW: 192, cellH: 192, frames: 7, insetX: 24, insetY: 45, width: 144, height: 110, drawW: 76, drawH: 64 },
+      { cellW: 128, cellH: 128, frames: 6, insetX: 16, insetY: 22, width: 96, height: 88, drawW: 70, drawH: 64 },
+      { cellW: 192, cellH: 192, frames: 7, insetX: 24, insetY: 45, width: 144, height: 110, drawW: 76, drawH: 64 },
+      { cellW: 192, cellH: 192, frames: 6, insetX: 24, insetY: 35, width: 144, height: 120, drawW: 76, drawH: 66 },
+      { cellW: 192, cellH: 192, frames: 8, insetX: 24, insetY: 38, width: 144, height: 116, drawW: 76, drawH: 65 },
+    ];
+    for (let i = 0; i < engine.enemyActive.length; i++) if (engine.enemyActive[i]) {
+      const type = engine.enemyType[i] as number, image = this.enemySpriteArt[type] ?? this.enemySpriteArt[0], sheet = sheets[type] ?? sheets[0];
+      if (!image?.complete) continue;
+      const frame = (tick + i % sheet.frames) % sheet.frames;
+      c.drawImage(image, frame * sheet.cellW + sheet.insetX, sheet.insetY, sheet.width, sheet.height, engine.enemyX[i] * sx - sheet.drawW / 2, engine.enemyY[i] * sy - sheet.drawH * .72, sheet.drawW, sheet.drawH);
+    }
+  }
   private drawNaive(engine: Engine) { const c = this.baselineCtx ?? (this.baselineCtx = this.baseline.getContext('2d')!); const sx = this.baseline.width / WORLD_W, sy = this.baseline.height / WORLD_H; c.clearRect(0,0,this.baseline.width,this.baseline.height); for (let i=0;i<engine.enemyActive.length;i++) if(engine.enemyActive[i]) { const inf=enemyInfo[engine.enemyType[i] as 0|1|2|3|4]; c.save(); c.translate(engine.enemyX[i]*sx,engine.enemyY[i]*sy); c.rotate(i*.017); c.fillStyle=`rgb(${inf.color.join(',')})`; c.beginPath(); c.arc(0,0,inf.size*sx,0,Math.PI*2); c.fill(); c.restore(); } for(let i=0;i<engine.projectileActive.length;i++) if(engine.projectileActive[i]) { c.fillStyle=engine.projectileColor[i]===1?'#f06d45':engine.projectileColor[i]===2?'#78d8e8':'#f5c451'; c.fillRect(engine.projectileX[i]*sx-2,engine.projectileY[i]*sy-2,5,5); } }
 }
