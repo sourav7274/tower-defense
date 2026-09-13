@@ -166,7 +166,7 @@ export class Engine {
   }
   private updateTowers(dt: number) {
     for (const t of this.towers) { t.attackTime = Math.max(0, t.attackTime - dt); t.cooldown -= dt; if (t.cooldown > 0) continue; const s = towerStats[t.kind]; const target = this.findTarget(t.x, t.y, s.range); if (target < 0) continue;
-      const mult = 1 + (t.level - 1) * .55; t.cooldown += s.reload / (1 + (t.level - 1) * .12); t.attackTime = t.kind === 'mortar' ? .32 : .22; this.spawnProjectile(t.x, t.y, target, s.damage * mult, s.speed * (1 + (t.level - 1) * .08), s.splash * (1 + (t.level - 1) * .2), t.kind === 'frost' ? .36 + t.level * .05 : 0, t.kind === 'bolt' ? 0 : t.kind === 'mortar' ? 1 : 2); }
+      const mult = 1 + (t.level - 1) * .55; t.cooldown += s.reload / (1 + (t.level - 1) * .12); t.attackTime = t.kind === 'mortar' ? .38 : .28; this.spawnProjectile(t.x, t.y, target, s.damage * mult, s.speed * (1 + (t.level - 1) * .08), s.splash * (1 + (t.level - 1) * .2), t.kind === 'frost' ? .36 + t.level * .05 : 0, t.kind === 'bolt' ? 0 : t.kind === 'mortar' ? 1 : 2); }
   }
   private findTarget(x: number, y: number, range: number): number {
     let best = -1; let farthest = -Infinity; const r2 = range * range;

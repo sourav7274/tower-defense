@@ -13,7 +13,7 @@ function compile(gl: WebGL2RenderingContext, type: number, source: string) { con
 export class Renderer {
   private gl: WebGL2RenderingContext | null; private program: WebGLProgram | null = null; private vao: WebGLVertexArrayObject | null = null; private buffer: WebGLBuffer | null = null;
   private data = new Float32Array(9000 * 8); private count = 0; private fallback: CanvasRenderingContext2D | null = null; private baselineCtx!: CanvasRenderingContext2D;
-  private chapter = -1; private art: Record<string, HTMLImageElement> = {};
+  private chapter = -1; private terrainWave = -1; private art: Record<string, HTMLImageElement> = {};
   private spriteCtx: CanvasRenderingContext2D; private enemySpriteArt: HTMLImageElement[] = [];
   constructor(private canvas: HTMLCanvasElement, private map: HTMLCanvasElement, private sprites: HTMLCanvasElement, private baseline: HTMLCanvasElement) {
     this.gl = canvas.getContext('webgl2', { alpha: true, antialias: false, premultipliedAlpha: true });
@@ -21,7 +21,7 @@ export class Renderer {
     this.spriteCtx = sprites.getContext('2d')!; new ResizeObserver(() => this.resize()).observe(canvas.parentElement!); this.loadArt(); this.resize();
   }
   private loadArt() { for (const [key, file] of Object.entries({ flat:'Tilemap_Flat.png', elevation:'Tilemap_Elevation.png', bridge:'Bridge_All.png', water:'Water.png', tree:'Tree.png', castle:'Castle_Blue.png', tower:'Tower_Blue.png', fire:'Fire.png', arrow:'Arrow.png', explosion:'Explosions.png', archer:'Archer_Blue.png', archerBody:'Archer_Blue_NoArms.png', archerBow:'Archer_Bow_Blue.png', longbowIdle:'defender-longbow-ready.png', pawn:'Pawn_Blue.png', warrior:'Warrior_Blue.png' })) { const image = new Image(); image.src = `/assets/${file}`; image.onload = () => this.drawMap(); this.art[key] = image; } for(const file of ['enemy-torch-walk.png','enemy-barrel-walk.png','enemy-tnt-walk.png','enemy-warrior-walk.png','enemy-archer-walk.png']) { const image = new Image(); image.src=`/assets/${file}`; this.enemySpriteArt.push(image); } }
-  private setChapter(wave: number) { const next = Math.min(4, Math.floor(Math.max(0, wave - 1) / 10)); if (next !== this.chapter) { this.chapter = next; this.drawMap(); } }
+  private setChapter(wave: number) { const next = Math.min(4, Math.floor(Math.max(0, wave - 1) / 10)); if (next !== this.chapter || wave !== this.terrainWave) { this.chapter = next; this.terrainWave = wave; this.drawMap(); } }
   get accelerated() { return !!this.gl; }
   private setup() { const gl = this.gl!; const p = gl.createProgram()!; gl.attachShader(p, compile(gl, gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl, gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) ?? 'link error'); this.program = p;
     this.vao = gl.createVertexArray(); this.buffer = gl.createBuffer(); gl.bindVertexArray(this.vao);
@@ -31,11 +31,12 @@ export class Renderer {
     gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 4, gl.FLOAT, false, stride, 3 * 4); gl.vertexAttribDivisor(2, 1); gl.bindVertexArray(null);
   }
   private resize() { const rect = this.canvas.parentElement!.getBoundingClientRect(); const dpr = Math.min(devicePixelRatio || 1, 2); const w = Math.max(1, Math.round(rect.width * dpr)), h = Math.max(1, Math.round(rect.height * dpr)); if (this.canvas.width === w && this.canvas.height === h) return; this.canvas.width = this.map.width = this.sprites.width = this.baseline.width = w; this.canvas.height = this.map.height = this.sprites.height = this.baseline.height = h; this.drawMap(); }
-  private drawMap() { const c = this.map.getContext('2d')!; const w = this.map.width, h = this.map.height; c.clearRect(0, 0, w, h); const tone = ['#638d69','#54777b','#6c5d55','#466e80','#775548'][Math.max(0,this.chapter)]; c.fillStyle = tone; c.fillRect(0, 0, w, h); c.save(); c.scale(w / WORLD_W, h / WORLD_H); c.imageSmoothingEnabled = false;
+  private drawMap() { const c = this.map.getContext('2d')!; const w = this.map.width, h = this.map.height, wave = Math.max(0, this.terrainWave), chapterStep = wave % 10; c.clearRect(0, 0, w, h); const tone = ['#638d69','#54777b','#6c5d55','#466e80','#775548'][Math.max(0,this.chapter)]; c.fillStyle = tone; c.fillRect(0, 0, w, h); c.save(); c.scale(w / WORLD_W, h / WORLD_H); c.imageSmoothingEnabled = false;
     const flat = this.art.flat, elevation = this.art.elevation, water = this.art.water; if (flat?.complete) { for (let x=0;x<WORLD_W;x+=128) for(let y=0;y<WORLD_H;y+=128) c.drawImage(flat, 0, 0, 128, 128, x, y, 128, 128); } if (water?.complete && this.chapter >= 1) { for (let x=0;x<640;x+=64) c.drawImage(water, x, 690, 64, 64); }
-    for (let x = 45; x < WORLD_W; x += 105) for (let y = 35; y < WORLD_H; y += 95) { c.fillStyle = `rgba(112,164,96,${.055 + ((x * 11 + y * 7) % 9) * .008})`; c.beginPath(); c.arc(x + ((y / 7) % 18), y, 42, 0, Math.PI * 2); c.fill(); }
+    for (let x = 45; x < WORLD_W; x += 105) for (let y = 35; y < WORLD_H; y += 95) { c.fillStyle = `rgba(112,164,96,${.045 + ((x * 11 + y * 7 + wave * 13) % 9) * .009})`; c.beginPath(); c.arc(x + ((y / 7 + wave * 3) % 18), y, 42, 0, Math.PI * 2); c.fill(); }
     const p = getPath(); c.lineCap = 'round'; c.lineJoin = 'round'; c.strokeStyle = '#27343b'; c.lineWidth = 132; c.beginPath(); c.moveTo(p[0][0], p[0][1]); for (let i = 1; i < p.length; i++) c.lineTo(p[i][0], p[i][1]); c.stroke(); c.strokeStyle = this.chapter >= 2 ? '#765544' : '#a77b4d'; c.lineWidth = 86; c.stroke(); c.strokeStyle = 'rgba(255,234,175,.22)'; c.lineWidth = 3; c.setLineDash([10, 14]); c.stroke(); c.setLineDash([]);
-    if (elevation?.complete) { for (let x=0;x<WORLD_W;x+=256) c.drawImage(elevation, 0, 0, 256, 220, x, 0, 256, 220); c.drawImage(elevation, 0, 0, 256, 220, 1450, 610, 256, 220); } if (this.art.bridge?.complete) c.drawImage(this.art.bridge, 0, 0, 192, 256, 915, 400, 170, 120); if(this.art.tree?.complete) for(let i=0;i<9;i++) c.drawImage(this.art.tree,0,0,128,128,40+i*185,90+(i%3)*190,92,92); if(this.art.castle?.complete) c.drawImage(this.art.castle,0,0,320,256,1510,270,240,192); if(this.art.tower?.complete) { c.drawImage(this.art.tower,0,0,128,256,1330,150,96,192); c.drawImage(this.art.tower,0,0,128,256,1450,125,96,192); } if(this.art.fire?.complete && this.chapter>=2) c.drawImage(this.art.fire,0,0,128,128,1550,610,80,80);
+    if (elevation?.complete) { for (let x=0;x<WORLD_W;x+=256) c.drawImage(elevation, 0, 0, 256, 220, x, 0, 256, 220); c.drawImage(elevation, 0, 0, 256, 220, 1450, 610, 256, 220); } if (this.art.bridge?.complete) c.drawImage(this.art.bridge, 0, 0, 192, 256, 915, 400, 170, 120); if(this.art.tree?.complete) for(let i=0;i<9+Math.floor(chapterStep/3);i++) c.drawImage(this.art.tree,0,0,128,128,40+i*185,90+((i+wave)%3)*190,92,92); if(this.art.castle?.complete) c.drawImage(this.art.castle,0,0,320,256,1510,270,240,192); if(this.art.tower?.complete) { c.drawImage(this.art.tower,0,0,128,256,1330,150,96,192); c.drawImage(this.art.tower,0,0,128,256,1450,125,96,192); } if(this.art.fire?.complete && this.chapter>=2) c.drawImage(this.art.fire,0,0,128,128,1550,610,80,80);
+    if (wave > 1) { c.globalAlpha = .05 + chapterStep * .012; c.fillStyle = this.chapter >= 2 ? '#321f1b' : '#d1b55d'; for (let i=0;i<7+chapterStep;i++) { const x = (i * 241 + wave * 97) % WORLD_W, y = 155 + ((i * 167 + wave * 53) % 610); c.fillRect(x, y, 34 + (i % 3) * 12, 3); } c.globalAlpha = 1; }
     const g = c.createRadialGradient(1735, 450, 3, 1735, 450, 130); g.addColorStop(0, 'rgba(246,202,90,.9)'); g.addColorStop(.25, 'rgba(235,144,68,.4)'); g.addColorStop(1, 'rgba(235,144,68,0)'); c.fillStyle = g; c.beginPath(); c.arc(1735, 450, 130, 0, Math.PI * 2); c.fill(); c.fillStyle = '#f1cb63'; c.beginPath(); c.arc(1735, 450, 27, 0, Math.PI * 2); c.fill(); c.fillStyle = '#25384a'; c.fillRect(1711, 426, 48, 48); c.restore(); }
   private emit(x: number, y: number, size: number, rgb: readonly number[], kind: number, alpha = 1) { if (this.count >= 9000) return; const o = this.count++ * 8; const d = this.data; d[o] = x; d[o + 1] = y; d[o + 2] = size; d[o + 3] = rgb[0]; d[o + 4] = rgb[1]; d[o + 5] = rgb[2]; d[o + 6] = alpha; d[o + 7] = kind; }
   render(engine: Engine, selected = -1, preview?: { kind: TowerKind; x: number; y: number; valid: boolean }, naive = false) {
@@ -78,9 +79,9 @@ export class Renderer {
     c.globalAlpha = 1;
 
     const crew: Record<TowerKind, { image: string; cellW: number; idleRow: number; attackRow: number; insetX: number; insetY: number; width: number; height: number; drawW: number; drawH: number; trim: string }> = {
-      bolt: { image: 'archer', cellW: 256, idleRow: 0, attackRow: 3, insetX: 42, insetY: 40, width: 172, height: 118, drawW: 84, drawH: 74, trim: '#f5c451' },
-      mortar: { image: 'pawn', cellW: 192, idleRow: 0, attackRow: 3, insetX: 24, insetY: 40, width: 144, height: 116, drawW: 74, drawH: 66, trim: '#f06d45' },
-      frost: { image: 'warrior', cellW: 192, idleRow: 0, attackRow: 2, insetX: 24, insetY: 32, width: 144, height: 126, drawW: 78, drawH: 69, trim: '#78d8e8' },
+      bolt: { image: 'archer', cellW: 256, idleRow: 0, attackRow: 3, insetX: 42, insetY: 40, width: 172, height: 118, drawW: 96, drawH: 85, trim: '#f5c451' },
+      mortar: { image: 'pawn', cellW: 192, idleRow: 0, attackRow: 3, insetX: 24, insetY: 40, width: 144, height: 116, drawW: 86, drawH: 77, trim: '#f06d45' },
+      frost: { image: 'warrior', cellW: 192, idleRow: 0, attackRow: 2, insetX: 24, insetY: 32, width: 144, height: 126, drawW: 91, drawH: 81, trim: '#78d8e8' },
     };
     for (let i = 0; i < engine.towers.length; i++) {
       const tower = engine.towers[i], spec = crew[tower.kind], image = this.art[spec.image], x = tower.x * sx, y = tower.y * sy;
@@ -91,15 +92,15 @@ export class Renderer {
         continue;
       }
       if (tower.kind === 'bolt' && this.art.archerBody?.complete && this.art.archerBow?.complete) {
-        const frame = Math.min(3, Math.floor((.22 - tower.attackTime) / .055));
-        c.drawImage(this.art.archerBody, frame * 192, 0, 192, 192, x - 42, y - 84, 84, 84);
-        c.drawImage(this.art.archerBow, (frame + 1) * 192, 192, 192, 192, x - 42, y - 84, 84, 84);
+        const frame = Math.min(3, Math.floor((.28 - tower.attackTime) / .07));
+        c.drawImage(this.art.archerBody, frame * 192, 0, 192, 192, x - 48, y - 96, 96, 96);
+        c.drawImage(this.art.archerBow, (frame + 1) * 192, 192, 192, 192, x - 48, y - 96, 96, 96);
         continue;
       }
       // Fallback only if the composed Archer art cannot load.
       const frame = !attacking ? 0 : tower.kind === 'bolt'
-        ? 1 + Math.min(3, Math.floor((.22 - tower.attackTime) / .055))
-        : Math.min(5, Math.floor(((tower.kind === 'mortar' ? .32 : .22) - tower.attackTime) * 18));
+        ? 1 + Math.min(3, Math.floor((.28 - tower.attackTime) / .07))
+        : Math.min(5, Math.floor(((tower.kind === 'mortar' ? .38 : .28) - tower.attackTime) * 14));
       const row = attacking ? spec.attackRow : spec.idleRow;
       c.drawImage(image, frame * spec.cellW + spec.insetX, row * 192 + spec.insetY, spec.width, spec.height, x - spec.drawW / 2, y - spec.drawH, spec.drawW, spec.drawH);
     }
