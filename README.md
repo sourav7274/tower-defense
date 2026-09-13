@@ -34,6 +34,10 @@ Open the local URL shown by Vite. Use `npm run build` for the production build a
 | Enemies | Swift Wisps, armored Golems, splitting Broodlings, shielded Specters, and Warden bosses every tenth wave. |
 | Progression | Wave health and composition scale through 50 waves; bosses, armor, shields, splitting, and faster spawns increase late-game pressure. |
 
+## Highwatch art direction
+
+The campaign is presented as **Siege of Highwatch**: Blue Knights defend an elevated citadel while Goblin raiders cross a lower ravine. The static terrain layer uses a curated Tiny Swords subset and rebakes at waves 1, 11, 21, 31, and 41; tower positions and the enemy route persist. Archer, Warrior, and Engineer commanders unlock at waves 11, 21, and 31 respectively and can be hired onto fixed ridge posts. See `ASSET_CREDITS.md` for asset provenance.
+
 ## Performance design
 
 The costly operations in a tower-defense game are target selection, collision/splash queries, entity allocation, and drawing many objects. Arcane Bastion addresses them as follows:

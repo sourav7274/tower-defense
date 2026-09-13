@@ -31,4 +31,14 @@ describe('Arcane Bastion simulation', () => {
     for (let i = 0; i < 30; i++) game.update(1 / 60);
     expect(game.snapshot().enemies).toBeGreaterThan(0);
   });
+
+  it('unlocks and hires ridge commanders at the planned chapter milestones', () => {
+    const game = new Engine();
+    game.wave = 11; game.gold = 500;
+    expect(game.hireCommander('archer')).toBe(true);
+    expect(game.commanders[0].hired).toBe(true);
+    expect(game.hireCommander('warrior')).toBe(false);
+    game.wave = 31; game.gold = 1000;
+    expect(game.hireCommander('engineer')).toBe(true);
+  });
 });

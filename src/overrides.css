@@ -1,1 +1,2 @@
-#map,#baseline{pointer-events:none}
+#map,#sprites,#baseline{pointer-events:none}
+.battlefield,.battlefield canvas{image-rendering:pixelated}.commanders{margin-top:14px;display:grid;gap:6px}.commander{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px;border:1px solid rgba(245,196,81,.28);border-radius:7px;background:#1b3039;color:#eadfb9;font-size:10px}.commander b{color:#f5c451;font-size:9px}.commander.hired{border-color:#77bba2;background:#203c38}.commander.hired b{color:#a6e0bd}.commander:disabled{opacity:.6;cursor:not-allowed}

@@ -1,6 +1,6 @@
 import './style.css';
 import './overrides.css';
-import { Engine, towerInfo, type TowerKind } from './engine';
+import { Engine, commanderInfo, towerInfo, type CommanderKind, type TowerKind } from './engine';
 import { Renderer } from './renderer';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -11,13 +11,13 @@ app.innerHTML = `
       <div class="controls"><button id="pause" class="icon" aria-label="Pause game">Ⅱ</button><button id="speed" class="speed">1×</button><button id="restart" class="icon" aria-label="Restart game">↻</button></div>
     </header>
     <section class="stage-wrap"><aside class="tower-dock"><p class="kicker">Runes</p><h2>Raise a ward</h2>
-      <button class="tower-card active" data-tower="bolt"><i class="rune bolt">✦</i><span><b>Rune Bolt</b><small>Rapid first-target fire</small></span><em>110</em><kbd>1</kbd></button>
-      <button class="tower-card" data-tower="mortar"><i class="rune mortar">◆</i><span><b>Ember Mortar</b><small>Slow blast area damage</small></span><em>165</em><kbd>2</kbd></button>
-      <button class="tower-card" data-tower="frost"><i class="rune frost">✧</i><span><b>Frost Obelisk</b><small>Chilling focused fire</small></span><em>145</em><kbd>3</kbd></button>
+      <button class="tower-card active" data-tower="bolt"><i class="rune bolt">➶</i><span><b>Longbow Tower</b><small>Rapid ravine fire</small></span><em>110</em><kbd>1</kbd></button>
+      <button class="tower-card" data-tower="mortar"><i class="rune mortar">✹</i><span><b>Bombard Tower</b><small>Heavy canyon blast</small></span><em>165</em><kbd>2</kbd></button>
+      <button class="tower-card" data-tower="frost"><i class="rune frost">⚑</i><span><b>Signal Ward</b><small>Slows the advance</small></span><em>145</em><kbd>3</kbd></button>
       <p class="hint">Click clear ground to place. <kbd>Esc</kbd> cancels.</p>
     </aside>
-    <section class="battlefield" aria-label="Arcane Bastion battlefield"><canvas id="map"></canvas><canvas id="game"></canvas><canvas id="baseline"></canvas><div id="wave-call" class="wave-call">Prepare the ward</div><div id="toast" role="status"></div><button id="start-wave" class="start-wave">Begin wave <span>→</span></button></section>
-    <aside class="detail-dock" id="details"><p class="kicker">Command</p><h2>Field report</h2><div class="report"><span>Enemies on path</span><b id="enemy-count">0</b></div><div class="report"><span>Projectiles in flight</span><b id="projectile-count">0</b></div><div class="report"><span>Towers raised</span><b id="tower-count">0 / 100</b></div><div class="selection" id="selection"><p>Select a tower on the field to inspect its range, upgrades, and value.</p></div>
+    <section class="battlefield" aria-label="Arcane Bastion battlefield"><canvas id="map"></canvas><canvas id="game"></canvas><canvas id="sprites"></canvas><canvas id="baseline"></canvas><div id="wave-call" class="wave-call">Prepare the ward</div><div id="toast" role="status"></div><button id="start-wave" class="start-wave">Begin wave <span>→</span></button></section>
+    <aside class="detail-dock" id="details"><p class="kicker">Highwatch command</p><h2>Ridge report</h2><div class="report"><span>Raiders in ravine</span><b id="enemy-count">0</b></div><div class="report"><span>Arrows and shells</span><b id="projectile-count">0</b></div><div class="report"><span>Towers raised</span><b id="tower-count">0 / 100</b></div><div class="selection" id="selection"><p>Raise a tower on the ridge, then select it to inspect its range and upgrades.</p></div><div id="commanders" class="commanders"></div>
       <button id="lab-open" class="lab-open">Open Performance Lab <span>↗</span></button></aside>
     </section>
     <section id="lab" class="lab hidden" aria-label="Performance Lab"><div class="lab-head"><div><p class="kicker">Measurement suite</p><h2>Performance Lab</h2><p>Equal seeded scenario. Baseline is deliberately object-heavy; optimized is the production renderer.</p></div><button id="lab-close" class="icon" aria-label="Close Performance Lab">×</button></div>
@@ -29,7 +29,7 @@ app.innerHTML = `
 
 const q = <T extends HTMLElement>(s: string) => document.querySelector<T>(s)!;
 const engine = new Engine();
-const renderer = new Renderer(q('#game'), q('#map'), q('#baseline'));
+const renderer = new Renderer(q('#game'), q('#map'), q('#sprites'), q('#baseline'));
 let selectedKind: TowerKind | null = 'bolt', selectedTower = -1, paused = false, speed = 1, mode: 'game' | 'optimized' | 'baseline' = 'game', load = 5000;
 let mouse = { x: 0, y: 0, inside: false }; let last = performance.now(), acc = 0, lastUi = 0; const samples: number[] = [];
 
@@ -41,10 +41,11 @@ function updateSelection() { const el = q('#selection'); const t = engine.towers
   el.innerHTML = `<div class="selected-title"><i class="rune ${t.kind}">${t.kind === 'bolt' ? '✦' : t.kind === 'mortar' ? '◆' : '✧'}</i><div><b>${t.kind === 'bolt' ? 'Rune Bolt' : t.kind === 'mortar' ? 'Ember Mortar' : 'Frost Obelisk'}</b><small>Level ${t.level} of 3</small></div></div><div class="statline"><span>Damage <b>${Math.round(s.damage * (1 + (t.level-1)*.55))}</b></span><span>Range <b>${s.range}</b></span></div><div class="selection-actions"><button id="upgrade" ${upgrade && engine.gold >= upgrade ? '' : 'disabled'}>${upgrade ? `Upgrade · ${upgrade}` : 'Maximum power'}</button><button id="sell">Sell · ${Math.floor(t.spent*.6)}</button></div>`;
   document.querySelector<HTMLButtonElement>('#upgrade')?.addEventListener('click', () => { if (engine.upgradeTower(selectedTower)) { toast('Runes strengthened'); updateSelection(); } }); q('#sell').addEventListener('click', () => { engine.sellTower(selectedTower); selectedTower = -1; toast('Tower reclaimed'); updateSelection(); });
 }
+function updateCommanders() { const host = q('#commanders'); host.innerHTML = engine.commanders.map(c => { const info = commanderInfo[c.kind]; const name = c.kind === 'archer' ? 'Archer Captain' : c.kind === 'warrior' ? 'Warrior Captain' : 'Engineer Captain'; const state = c.hired ? 'Garrisoned' : engine.wave < info.wave ? `Unlocks wave ${info.wave}` : `Hire · ${info.cost}`; return `<button class="commander ${c.hired ? 'hired' : ''}" data-commander="${c.kind}" ${c.hired || engine.wave < info.wave || engine.gold < info.cost ? 'disabled' : ''}><span>${name}</span><b>${state}</b></button>`; }).join(''); host.querySelectorAll<HTMLButtonElement>('.commander').forEach(button => button.addEventListener('click', () => { const kind = button.dataset.commander as CommanderKind; if (engine.hireCommander(kind)) toast(`${kind === 'archer' ? 'Archer' : kind === 'warrior' ? 'Warrior' : 'Engineer'} Captain takes the ridge`); updateCommanders(); })); }
 function updateUi(force = false) { const now = performance.now(); if (!force && now - lastUi < 100) return; lastUi = now; const s = engine.snapshot(); q('#wave').textContent = `${s.wave} / 50`; q('#gold').textContent = String(s.gold); q('#health').textContent = String(s.health); q('#score').textContent = String(s.score); q('#enemy-count').textContent = String(s.enemies); q('#projectile-count').textContent = String(s.projectiles); q('#tower-count').textContent = `${s.towers} / 100`;
   const button = q<HTMLButtonElement>('#start-wave'); button.classList.toggle('hidden', mode !== 'game' || s.phase !== 'playing' && s.wave >= 50 || s.spawning || s.enemies > 0); button.innerHTML = s.wave === 0 ? 'Begin first wave <span>→</span>' : `Begin wave ${s.wave + 1} <span>→</span>`; q('#wave-call').textContent = s.spawning ? `Wave ${s.wave} · ${s.remaining} incoming` : s.enemies ? `Wave ${s.wave} · ${s.enemies} on path` : s.wave >= 50 ? 'The citadel stands' : `The next ward awaits · wave ${s.wave + 1}`;
   if (s.phase === 'gameover' || s.phase === 'victory') terminal(s.phase, s);
-  if (mode !== 'game') updateMetrics();
+  updateCommanders(); if (mode !== 'game') updateMetrics();
 }
 function terminal(phase: string, s: ReturnType<Engine['snapshot']>) { const el = q('#terminal'); if (!el.classList.contains('hidden')) return; q('#terminal-kicker').textContent = phase === 'victory' ? 'Fifty waves survived' : 'The ward fell'; q('#terminal-title').textContent = phase === 'victory' ? 'Arcane Bastion endures' : 'The citadel was overrun'; q('#terminal-copy').textContent = phase === 'victory' ? `Final score ${s.score.toLocaleString()} · ${s.kills.toLocaleString()} invaders banished.` : `You reached wave ${s.wave} with ${s.kills} invaders banished.`; el.classList.remove('hidden'); }
 function updateMetrics() { if (!samples.length) return; const sorted = [...samples].sort((a,b)=>a-b), avg = samples.reduce((a,b)=>a+b,0)/samples.length, p95 = sorted[Math.floor(sorted.length*.05)] || 0, over = samples.filter(x=>x>33).length/samples.length*100, s=engine.snapshot(); q('#fps').textContent = `${(1000/avg).toFixed(0)}`; q('#p95').textContent = `${(1000/p95).toFixed(0)} FPS`; q('#over33').textContent = `${over.toFixed(1)}%`; q('#active-load').textContent = `${s.enemies.toLocaleString()} / ${s.towers} / ${s.projectiles.toLocaleString()}`; const mem=(performance as Performance & {memory?: {usedJSHeapSize:number}}).memory; q('#memory').textContent=mem ? `${(mem.usedJSHeapSize/1048576).toFixed(1)} MB` : 'Unavailable'; }

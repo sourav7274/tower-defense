@@ -9,8 +9,10 @@ const ROWS = Math.ceil(WORLD_H / CELL);
 export type TowerKind = 'bolt' | 'mortar' | 'frost';
 export type GamePhase = 'intro' | 'playing' | 'victory' | 'gameover';
 export type EnemyKind = 0 | 1 | 2 | 3 | 4;
+export type CommanderKind = 'archer' | 'warrior' | 'engineer';
 
 export interface Tower { x: number; y: number; kind: TowerKind; level: number; cooldown: number; spent: number; }
+export interface Commander { kind: CommanderKind; x: number; y: number; cooldown: number; hired: boolean; }
 export interface GameSnapshot {
   phase: GamePhase; wave: number; health: number; gold: number; score: number; kills: number;
   enemies: number; projectiles: number; towers: number; spawning: boolean; remaining: number;
@@ -34,6 +36,11 @@ const towerStats: Record<TowerKind, { cost: number; range: number; reload: numbe
   frost: { cost: 145, range: 195, reload: .48, damage: 10, speed: 610, splash: 0, color: [120, 216, 232] },
 };
 export const towerInfo = towerStats;
+export const commanderInfo: Record<CommanderKind, { cost: number; wave: number; range: number; reload: number; damage: number; splash: number; }> = {
+  archer: { cost: 240, wave: 11, range: 310, reload: .45, damage: 26, splash: 0 },
+  warrior: { cost: 330, wave: 21, range: 125, reload: .62, damage: 68, splash: 0 },
+  engineer: { cost: 420, wave: 31, range: 280, reload: 1.25, damage: 74, splash: 132 },
+};
 
 const enemyStats: Record<EnemyKind, { hp: number; speed: number; armor: number; reward: number; base: number; color: [number, number, number]; size: number; }> = {
   0: { hp: 44, speed: 66, armor: 0, reward: 10, base: 1, color: [177, 229, 169], size: 10 }, // wisp
@@ -72,6 +79,11 @@ export class Engine {
   readonly projectileSlow = new Float32Array(MAX_PROJECTILES);
   readonly projectileColor = new Uint8Array(MAX_PROJECTILES);
   readonly towers: Tower[] = [];
+  readonly commanders: Commander[] = [
+    { kind: 'archer', x: 1000, y: 170, cooldown: 0, hired: false },
+    { kind: 'warrior', x: 1280, y: 360, cooldown: 0, hired: false },
+    { kind: 'engineer', x: 1420, y: 155, cooldown: 0, hired: false },
+  ];
   readonly enemyFree: number[] = [];
   readonly projectileFree: number[] = [];
   phase: GamePhase = 'intro'; wave = 0; health = 20; gold = 500; score = 0; kills = 0;
@@ -83,7 +95,7 @@ export class Engine {
     this.enemyActive.fill(0); this.projectileActive.fill(0); this.enemyFree.length = 0; this.projectileFree.length = 0;
     for (let i = MAX_ENEMIES - 1; i >= 0; i--) this.enemyFree.push(i);
     for (let i = MAX_PROJECTILES - 1; i >= 0; i--) this.projectileFree.push(i);
-    this.towers.length = 0; this.phase = 'intro'; this.wave = 0; this.health = 20; this.gold = 500; this.score = 0; this.kills = 0;
+    this.towers.length = 0; for (const commander of this.commanders) { commander.hired = false; commander.cooldown = 0; } this.phase = 'intro'; this.wave = 0; this.health = 20; this.gold = 500; this.score = 0; this.kills = 0;
     this.enemyCount = 0; this.projectileCount = 0; this.spawnLeft = 0; this.spawnTimer = 0; this.spawning = false; this.benchmark = false; this.seed = 1;
   }
   snapshot(): GameSnapshot { return { phase: this.phase, wave: this.wave, health: this.health, gold: this.gold, score: this.score, kills: this.kills, enemies: this.enemyCount, projectiles: this.projectileCount, towers: this.towers.length, spawning: this.spawning, remaining: this.spawnLeft }; }
@@ -103,6 +115,7 @@ export class Engine {
     this.gold -= cost; t.spent += cost; t.level++; return true;
   }
   sellTower(index: number): boolean { const t = this.towers[index]; if (!t) return false; this.gold += Math.floor(t.spent * .6); this.towers.splice(index, 1); return true; }
+  hireCommander(kind: CommanderKind): boolean { const c = this.commanders.find(item => item.kind === kind)!; const info = commanderInfo[kind]; if (c.hired || this.wave < info.wave || this.gold < info.cost) return false; this.gold -= info.cost; c.hired = true; c.cooldown = .2; return true; }
   validPad(x: number, y: number): boolean {
     if (x < 42 || y < 42 || x > WORLD_W - 42 || y > WORLD_H - 42) return false;
     let min = Infinity;
@@ -125,7 +138,7 @@ export class Engine {
   update(dt: number) {
     if (this.phase !== 'playing') return;
     if (this.spawning) { this.spawnTimer -= dt; while (this.spawnLeft > 0 && this.spawnTimer <= 0) { this.spawnWaveEnemy(); this.spawnLeft--; this.spawnTimer += Math.max(.095, .38 - this.wave * .004); } if (!this.spawnLeft) this.spawning = false; }
-    this.updateEnemies(dt); this.rebuildGrid(); this.updateTowers(dt); this.updateProjectiles(dt);
+    this.updateEnemies(dt); this.rebuildGrid(); this.updateTowers(dt); this.updateCommanders(dt); this.updateProjectiles(dt);
     if (!this.benchmark && !this.spawning && this.enemyCount === 0 && this.wave >= 50) this.phase = 'victory';
     if (this.health <= 0) this.phase = 'gameover';
   }
@@ -160,6 +173,7 @@ export class Engine {
     for (const t of this.towers) { t.cooldown -= dt; if (t.cooldown > 0) continue; const s = towerStats[t.kind]; const target = this.findTarget(t.x, t.y, s.range); if (target < 0) continue;
       const mult = 1 + (t.level - 1) * .55; t.cooldown += s.reload / (1 + (t.level - 1) * .12); this.spawnProjectile(t.x, t.y, target, s.damage * mult, s.speed * (1 + (t.level - 1) * .08), s.splash * (1 + (t.level - 1) * .2), t.kind === 'frost' ? .36 + t.level * .05 : 0, t.kind === 'bolt' ? 0 : t.kind === 'mortar' ? 1 : 2); }
   }
+  private updateCommanders(dt: number) { for (const c of this.commanders) if (c.hired) { const info = commanderInfo[c.kind]; c.cooldown -= dt; if (c.cooldown > 0) continue; const target = this.findTarget(c.x, c.y, info.range); if (target < 0) continue; c.cooldown += info.reload; this.spawnProjectile(c.x, c.y, target, info.damage, c.kind === 'warrior' ? 820 : 680, info.splash, 0, c.kind === 'engineer' ? 1 : 0); } }
   private findTarget(x: number, y: number, range: number): number {
     let best = -1; let farthest = -Infinity; const r2 = range * range;
     if (this.naive) { for (let i = 0; i < MAX_ENEMIES; i++) if (this.enemyActive[i]) { const dx = this.enemyX[i] - x, dy = this.enemyY[i] - y; if (dx * dx + dy * dy <= r2 && this.enemyDist[i] > farthest) { best = i; farthest = this.enemyDist[i]; } } return best; }
