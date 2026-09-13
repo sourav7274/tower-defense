@@ -1,0 +1,27 @@
+/* Campaign-only controls layered over the full-screen battlefield. */
+.perf-overlay {
+  top: auto;
+  right: auto;
+  bottom: 100px;
+  left: 14px;
+}
+
+.detail-dock > .lab-open {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  min-height: 32px;
+  padding: 7px 9px;
+  border: 1px solid rgba(120, 216, 232, .45);
+  border-radius: 6px;
+  background: rgba(21, 48, 59, .92);
+  color: #d7f5f3;
+  cursor: pointer;
+  font: inherit;
+}
+
+.detail-dock > .lab-open:hover { background: rgba(34, 72, 79, .98); }
+
+@media (max-width: 760px) {
+  .perf-overlay { top: 80px; right: 8px; bottom: auto; left: auto; }
+}

@@ -13,10 +13,11 @@ Open the local URL shown by Vite. Use `npm run build` for the production build a
 
 ## Play
 
-- Select Rune Bolt (`1`), Ember Mortar (`2`), or Frost Obelisk (`3`), then click clear ground to place it.
+- Select Longbow Guard (`1`), Bombard Tower (`2`), or Shield Warrior (`3`) from the bottom build tray, then click clear ground to place it.
 - Click a placed tower after pressing `Esc` to inspect it, upgrade it, or sell it.
 - Begin the next wave from the battlefield button. `Space` pauses; the top controls restart and cycle 1×/2×/3× speed.
-- Survive wave 50 with the citadel ward intact to win.
+- Each of the five levels begins with a fresh defense, castle health, and economy. Score and kills carry over. Survive Level 5, Wave 10 to win.
+- Use the top-bar information button for the rules and the FPS button for the non-blocking live Performance Overlay.
 
 ## Architecture
 
@@ -32,11 +33,11 @@ Open the local URL shown by Vite. Use `npm run build` for the production build a
 | --- | --- |
 | Towers | Rune Bolt: fast single-target fire. Ember Mortar: heavy splash. Frost Obelisk: damage plus slow. Each has three levels and a 60% sell value. |
 | Enemies | Swift Wisps, armored Golems, splitting Broodlings, shielded Specters, and Warden bosses every tenth wave. |
-| Progression | Wave health and composition scale through 50 waves; bosses, armor, shields, splitting, and faster spawns increase late-game pressure. |
+| Progression | Five authored levels of ten waves use unique routes, castle positions, terrain themes, and starting gold (500–700). Bosses, armor, shields, splitting, and faster spawns increase late-game pressure. |
 
 ## Highwatch art direction
 
-The campaign is presented as **Siege of Highwatch**: Blue Knights defend an elevated citadel while Goblin raiders cross a lower ravine. The static terrain layer uses a curated Tiny Swords subset and rebakes at waves 1, 11, 21, 31, and 41; troop positions and the enemy route persist. Players deploy animated Longbow Guards, Siege Engineers, and Shield Warriors onto ridge posts, train them through three ranks, and discharge them for gold. See `ASSET_CREDITS.md` for asset provenance.
+The campaign is presented as **Siege of Highwatch**: Blue Knights defend an elevated citadel while Goblin raiders cross a lower ravine. Five themed maps—Highwatch Gate, Mist Narrows, Siege Scar, Flooded Ravine, and Last Stand—own their routes and castle endpoints. Static terrain is rebaked only between waves and levels. Players deploy animated Longbow Guards, Siege Engineers, and Shield Warriors, train them through three ranks, and discharge them for gold. See `ASSET_CREDITS.md` for asset provenance.
 
 ## Performance design
 
@@ -50,7 +51,7 @@ The costly operations in a tower-defense game are target selection, collision/sp
 
 ## Performance Lab and measurement
 
-Open **Performance Lab** in the right command dock. It runs the same seeded scenario in two modes:
+Open the live **Performance Overlay** from the top bar to inspect normal campaign metrics without blocking play. Open **Performance Lab** from the contextual command panel when you want to run the separate seeded comparison scenario in two modes:
 
 - **Naive baseline:** deliberately broad tower scans plus per-entity Canvas 2D drawing. It is visibly labelled as a comparison reference, not the shipping implementation.
 - **Optimized engine:** typed-array pools, spatial grid, and batched WebGL2 production rendering.

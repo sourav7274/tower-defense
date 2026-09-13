@@ -8,7 +8,7 @@ const COLS = Math.ceil(WORLD_W / CELL);
 const ROWS = Math.ceil(WORLD_H / CELL);
 
 export type TowerKind = 'bolt' | 'mortar' | 'frost';
-export type GamePhase = 'intro' | 'playing' | 'victory' | 'gameover';
+export type GamePhase = 'intro' | 'playing' | 'levelcomplete' | 'victory' | 'gameover';
 export type EnemyKind = 0 | 1 | 2 | 3 | 4;
 
 export interface Tower { x: number; y: number; kind: TowerKind; level: number; cooldown: number; attackTime: number; spent: number; }
@@ -17,6 +17,25 @@ export interface GameSnapshot {
   enemies: number; projectiles: number; towers: number; spawning: boolean; remaining: number;
 }
 
+export interface LevelDefinition { name: string; theme: number; startingGold: number; path: readonly (readonly [number, number])[]; }
+export const LEVELS: readonly LevelDefinition[] = [
+  { name: 'Highwatch Gate', theme: 0, startingGold: 500, path: [[0,470],[190,470],[330,285],[570,285],[715,510],[940,510],[1090,250],[1320,250],[1450,570],[1640,570],[1740,450],[1800,450]] },
+  { name: 'Mist Narrows', theme: 1, startingGold: 550, path: [[0,220],[230,220],[340,410],[620,410],[745,205],[980,205],[1100,450],[1370,450],[1490,250],[1800,250]] },
+  { name: 'Siege Scar', theme: 2, startingGold: 600, path: [[0,660],[210,660],[335,475],[560,475],[685,700],[930,700],[1070,500],[1250,500],[1395,690],[1600,690],[1800,520]] },
+  { name: 'Flooded Ravine', theme: 3, startingGold: 650, path: [[0,350],[180,350],[310,180],[520,180],[660,390],[860,390],[1000,660],[1220,660],[1360,430],[1540,430],[1690,210],[1800,210]] },
+  { name: 'Last Stand', theme: 4, startingGold: 700, path: [[0,720],[220,720],[350,540],[520,540],[650,760],[880,760],[1020,560],[1190,560],[1320,330],[1510,330],[1640,510],[1800,510]] },
+];
+let path: readonly (readonly [number, number])[] = LEVELS[0].path;
+let segment: number[] = [];
+let cumulative: number[] = [];
+export let PATH_LENGTH = 0;
+function configurePath(next: readonly (readonly [number, number])[]) {
+  path = next; segment = []; cumulative = [0];
+  for (let i = 1; i < path.length; i++) { const dx = path[i][0] - path[i - 1][0], dy = path[i][1] - path[i - 1][1], d = Math.hypot(dx, dy); segment.push(d); cumulative.push(cumulative[i - 1] + d); }
+  PATH_LENGTH = cumulative[cumulative.length - 1];
+}
+/* legacy first route retained through LEVELS[0] */
+/*
 const path = [
   [0, 470], [190, 470], [330, 285], [570, 285], [715, 510], [940, 510],
   [1090, 250], [1320, 250], [1450, 570], [1640, 570], [1740, 450], [1800, 450],
@@ -28,6 +47,7 @@ for (let i = 1; i < path.length; i++) {
   const d = Math.hypot(dx, dy); segment.push(d); cumulative.push(cumulative[i - 1] + d);
 }
 export const PATH_LENGTH = cumulative[cumulative.length - 1];
+*/
 
 const towerStats: Record<TowerKind, { cost: number; range: number; reload: number; damage: number; speed: number; splash: number; color: [number, number, number]; }> = {
   bolt: { cost: 110, range: 230, reload: .32, damage: 15, speed: 740, splash: 0, color: [245, 196, 81] },
@@ -81,23 +101,30 @@ export class Engine {
   readonly towers: Tower[] = [];
   readonly enemyFree: number[] = [];
   readonly projectileFree: number[] = []; readonly effectFree: number[] = [];
-  phase: GamePhase = 'intro'; wave = 0; health = 20; gold = 500; score = 0; kills = 0;
+  phase: GamePhase = 'intro'; wave = 0; localWave = 0; levelIndex = 0; health = 20; gold = 500; score = 0; kills = 0;
+  private levelStartScore = 0; private levelStartKills = 0;
   enemyCount = 0; projectileCount = 0; effectCount = 0; spawnLeft = 0; spawnTimer = 0; spawning = false;
   private benchmark = false; private naive = false; private seed = 1;
 
   constructor() { this.reset(); }
   reset() {
+    this.levelIndex = 0; this.localWave = 0; configurePath(LEVELS[0].path);
     this.enemyActive.fill(0); this.projectileActive.fill(0); this.effectActive.fill(0); this.enemyFree.length = 0; this.projectileFree.length = 0; this.effectFree.length = 0;
     for (let i = MAX_ENEMIES - 1; i >= 0; i--) this.enemyFree.push(i);
     for (let i = MAX_PROJECTILES - 1; i >= 0; i--) this.projectileFree.push(i);
     for (let i = MAX_EFFECTS - 1; i >= 0; i--) this.effectFree.push(i);
-    this.towers.length = 0; this.phase = 'intro'; this.wave = 0; this.health = 20; this.gold = 500; this.score = 0; this.kills = 0;
+    this.towers.length = 0; this.phase = 'intro'; this.wave = 0; this.health = 20; this.gold = LEVELS[0].startingGold; this.score = 0; this.kills = 0; this.levelStartScore = 0; this.levelStartKills = 0;
     this.enemyCount = 0; this.projectileCount = 0; this.effectCount = 0; this.spawnLeft = 0; this.spawnTimer = 0; this.spawning = false; this.benchmark = false; this.seed = 1;
   }
   snapshot(): GameSnapshot { return { phase: this.phase, wave: this.wave, health: this.health, gold: this.gold, score: this.score, kills: this.kills, enemies: this.enemyCount, projectiles: this.projectileCount, towers: this.towers.length, spawning: this.spawning, remaining: this.spawnLeft }; }
+  get level() { return LEVELS[this.levelIndex]; }
+  getPath() { return path; }
+  advanceLevel() { if (this.phase !== 'levelcomplete' || this.levelIndex >= LEVELS.length - 1) return false; this.levelIndex++; this.localWave = 0; this.resetLevelRuntime(); return true; }
+  restartLevel() { this.score = this.levelStartScore; this.kills = this.levelStartKills; this.localWave = 0; this.resetLevelRuntime(); }
+  private resetLevelRuntime() { configurePath(LEVELS[this.levelIndex].path); this.enemyActive.fill(0); this.projectileActive.fill(0); this.effectActive.fill(0); this.enemyFree.length = this.projectileFree.length = this.effectFree.length = 0; for (let i=MAX_ENEMIES-1;i>=0;i--) this.enemyFree.push(i); for (let i=MAX_PROJECTILES-1;i>=0;i--) this.projectileFree.push(i); for (let i=MAX_EFFECTS-1;i>=0;i--) this.effectFree.push(i); this.towers.length=0; this.enemyCount=0; this.projectileCount=0; this.effectCount=0; this.health=20; this.gold=LEVELS[this.levelIndex].startingGold; this.spawnLeft=0; this.spawnTimer=0; this.spawning=false; this.phase='intro'; this.wave=this.levelIndex*10; this.levelStartScore=this.score; this.levelStartKills=this.kills; }
   startWave() {
-    if (this.phase === 'gameover' || this.phase === 'victory' || this.spawning || this.enemyCount) return;
-    this.phase = 'playing'; this.wave++; this.spawnLeft = 7 + this.wave * 3 + Math.floor(this.wave * this.wave / 7);
+    if (this.phase === 'gameover' || this.phase === 'victory' || this.phase === 'levelcomplete' || this.spawning || this.enemyCount) return;
+    this.phase = 'playing'; this.localWave++; this.wave = this.levelIndex * 10 + this.localWave; this.spawnLeft = 7 + this.wave * 3 + Math.floor(this.wave * this.wave / 7);
     if (this.wave % 10 === 0) this.spawnLeft++; this.spawning = true; this.spawnTimer = 0;
   }
   placeTower(kind: TowerKind, x: number, y: number): boolean {
@@ -134,7 +161,7 @@ export class Engine {
     if (this.phase !== 'playing') return;
     if (this.spawning) { this.spawnTimer -= dt; while (this.spawnLeft > 0 && this.spawnTimer <= 0) { this.spawnWaveEnemy(); this.spawnLeft--; this.spawnTimer += Math.max(.095, .38 - this.wave * .004); } if (!this.spawnLeft) this.spawning = false; }
     this.updateEnemies(dt); this.rebuildGrid(); this.updateTowers(dt); this.updateProjectiles(dt); this.updateEffects(dt);
-    if (!this.benchmark && !this.spawning && this.enemyCount === 0 && this.wave >= 50) this.phase = 'victory';
+    if (!this.benchmark && !this.spawning && this.enemyCount === 0 && this.localWave >= 10) this.phase = this.levelIndex === LEVELS.length - 1 ? 'victory' : 'levelcomplete';
     if (this.health <= 0) this.phase = 'gameover';
   }
   private spawnWaveEnemy() {
@@ -156,7 +183,11 @@ export class Engine {
       const type = this.enemyType[i] as EnemyKind; const s = enemyStats[type];
       if (this.enemySlowTime[i] > 0) { this.enemySlowTime[i] -= dt; } else this.enemySlow[i] = 0;
       this.enemyDist[i] += s.speed * (1 - this.enemySlow[i]) * dt;
-      if (this.enemyDist[i] >= PATH_LENGTH) { this.releaseEnemy(i); this.health -= s.base; continue; }
+      if (this.enemyDist[i] >= PATH_LENGTH) {
+        const [castleX, castleY] = pathPosition(PATH_LENGTH);
+        this.spawnEffect(1, castleX, castleY, .42);
+        this.releaseEnemy(i); this.health -= s.base; continue;
+      }
       const [x, y] = pathPosition(this.enemyDist[i]); this.enemyX[i] = x; this.enemyY[i] = y;
     }
   }
