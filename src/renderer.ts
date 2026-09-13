@@ -20,7 +20,7 @@ export class Renderer {
     if (this.gl) this.setup(); else this.fallback = canvas.getContext('2d');
     this.spriteCtx = sprites.getContext('2d')!; new ResizeObserver(() => this.resize()).observe(canvas.parentElement!); this.loadArt(); this.resize();
   }
-  private loadArt() { for (const [key, file] of Object.entries({ flat:'Tilemap_Flat.png', elevation:'Tilemap_Elevation.png', bridge:'Bridge_All.png', water:'Water.png', tree:'Tree.png', castle:'Castle_Blue.png', tower:'Tower_Blue.png', fire:'Fire.png', arrow:'Arrow.png', explosion:'Explosions.png', archer:'Archer_Blue.png', pawn:'Pawn_Blue.png', warrior:'Warrior_Blue.png' })) { const image = new Image(); image.src = `/assets/${file}`; image.onload = () => this.drawMap(); this.art[key] = image; } for(const file of ['enemy-torch-walk.png','enemy-barrel-walk.png','enemy-tnt-walk.png','enemy-warrior-walk.png','enemy-archer-walk.png']) { const image = new Image(); image.src=`/assets/${file}`; this.enemySpriteArt.push(image); } }
+  private loadArt() { for (const [key, file] of Object.entries({ flat:'Tilemap_Flat.png', elevation:'Tilemap_Elevation.png', bridge:'Bridge_All.png', water:'Water.png', tree:'Tree.png', castle:'Castle_Blue.png', tower:'Tower_Blue.png', fire:'Fire.png', arrow:'Arrow.png', explosion:'Explosions.png', archer:'Archer_Blue.png', archerBody:'Archer_Blue_NoArms.png', archerBow:'Archer_Bow_Blue.png', longbowIdle:'defender-longbow-ready.png', pawn:'Pawn_Blue.png', warrior:'Warrior_Blue.png' })) { const image = new Image(); image.src = `/assets/${file}`; image.onload = () => this.drawMap(); this.art[key] = image; } for(const file of ['enemy-torch-walk.png','enemy-barrel-walk.png','enemy-tnt-walk.png','enemy-warrior-walk.png','enemy-archer-walk.png']) { const image = new Image(); image.src=`/assets/${file}`; this.enemySpriteArt.push(image); } }
   private setChapter(wave: number) { const next = Math.min(4, Math.floor(Math.max(0, wave - 1) / 10)); if (next !== this.chapter) { this.chapter = next; this.drawMap(); } }
   get accelerated() { return !!this.gl; }
   private setup() { const gl = this.gl!; const p = gl.createProgram()!; gl.attachShader(p, compile(gl, gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl, gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) ?? 'link error'); this.program = p;
@@ -78,7 +78,7 @@ export class Renderer {
     c.globalAlpha = 1;
 
     const crew: Record<TowerKind, { image: string; cellW: number; idleRow: number; attackRow: number; insetX: number; insetY: number; width: number; height: number; drawW: number; drawH: number; trim: string }> = {
-      bolt: { image: 'archer', cellW: 256, idleRow: 0, attackRow: 3, insetX: 42, insetY: 40, width: 172, height: 118, drawW: 76, drawH: 66, trim: '#f5c451' },
+      bolt: { image: 'archer', cellW: 256, idleRow: 0, attackRow: 3, insetX: 42, insetY: 40, width: 172, height: 118, drawW: 84, drawH: 74, trim: '#f5c451' },
       mortar: { image: 'pawn', cellW: 192, idleRow: 0, attackRow: 3, insetX: 24, insetY: 40, width: 144, height: 116, drawW: 74, drawH: 66, trim: '#f06d45' },
       frost: { image: 'warrior', cellW: 192, idleRow: 0, attackRow: 2, insetX: 24, insetY: 32, width: 144, height: 126, drawW: 78, drawH: 69, trim: '#78d8e8' },
     };
@@ -87,7 +87,21 @@ export class Renderer {
       if (this.art.tower?.complete) c.drawImage(this.art.tower, 0, 0, 128, 256, x - 43, y - 116, 86, 172);
       c.fillStyle = spec.trim; c.fillRect(x - 29, y - 106, 6, 36);
       if (!image?.complete) continue;
-      const attacking = tower.attackTime > 0, frame = attacking ? Math.min(5, Math.floor((.34 - tower.attackTime) * 18)) : 0;
+      const attacking = tower.attackTime > 0;
+      if (tower.kind === 'bolt' && !attacking && this.art.longbowIdle?.complete) {
+        c.drawImage(this.art.longbowIdle, 0, 0, 192, 191, x - spec.drawW / 2, y - 132, spec.drawW, spec.drawH);
+        continue;
+      }
+      if (tower.kind === 'bolt' && this.art.archerBody?.complete && this.art.archerBow?.complete) {
+        const frame = Math.min(3, Math.floor((.22 - tower.attackTime) / .055));
+        c.drawImage(this.art.archerBody, frame * 192, 0, 192, 192, x - 42, y - 150, 84, 84);
+        c.drawImage(this.art.archerBow, (frame + 1) * 192, 192, 192, 192, x - 42, y - 150, 84, 84);
+        continue;
+      }
+      // Fallback only if the composed Archer art cannot load.
+      const frame = !attacking ? 0 : tower.kind === 'bolt'
+        ? 1 + Math.min(3, Math.floor((.22 - tower.attackTime) / .055))
+        : Math.min(5, Math.floor(((tower.kind === 'mortar' ? .32 : .22) - tower.attackTime) * 18));
       const row = attacking ? spec.attackRow : spec.idleRow;
       c.drawImage(image, frame * spec.cellW + spec.insetX, row * 192 + spec.insetY, spec.width, spec.height, x - spec.drawW / 2, y - 132, spec.drawW, spec.drawH);
     }
