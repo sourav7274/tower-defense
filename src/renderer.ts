@@ -84,18 +84,16 @@ export class Renderer {
     };
     for (let i = 0; i < engine.towers.length; i++) {
       const tower = engine.towers[i], spec = crew[tower.kind], image = this.art[spec.image], x = tower.x * sx, y = tower.y * sy;
-      if (this.art.tower?.complete) c.drawImage(this.art.tower, 0, 0, 128, 256, x - 43, y - 116, 86, 172);
-      c.fillStyle = spec.trim; c.fillRect(x - 29, y - 106, 6, 36);
       if (!image?.complete) continue;
       const attacking = tower.attackTime > 0;
       if (tower.kind === 'bolt' && !attacking && this.art.longbowIdle?.complete) {
-        c.drawImage(this.art.longbowIdle, 0, 0, 192, 191, x - spec.drawW / 2, y - 132, spec.drawW, spec.drawH);
+        c.drawImage(this.art.longbowIdle, 0, 0, 192, 191, x - spec.drawW / 2, y - spec.drawH, spec.drawW, spec.drawH);
         continue;
       }
       if (tower.kind === 'bolt' && this.art.archerBody?.complete && this.art.archerBow?.complete) {
         const frame = Math.min(3, Math.floor((.22 - tower.attackTime) / .055));
-        c.drawImage(this.art.archerBody, frame * 192, 0, 192, 192, x - 42, y - 150, 84, 84);
-        c.drawImage(this.art.archerBow, (frame + 1) * 192, 192, 192, 192, x - 42, y - 150, 84, 84);
+        c.drawImage(this.art.archerBody, frame * 192, 0, 192, 192, x - 42, y - 84, 84, 84);
+        c.drawImage(this.art.archerBow, (frame + 1) * 192, 192, 192, 192, x - 42, y - 84, 84, 84);
         continue;
       }
       // Fallback only if the composed Archer art cannot load.
@@ -103,7 +101,7 @@ export class Renderer {
         ? 1 + Math.min(3, Math.floor((.22 - tower.attackTime) / .055))
         : Math.min(5, Math.floor(((tower.kind === 'mortar' ? .32 : .22) - tower.attackTime) * 18));
       const row = attacking ? spec.attackRow : spec.idleRow;
-      c.drawImage(image, frame * spec.cellW + spec.insetX, row * 192 + spec.insetY, spec.width, spec.height, x - spec.drawW / 2, y - 132, spec.drawW, spec.drawH);
+      c.drawImage(image, frame * spec.cellW + spec.insetX, row * 192 + spec.insetY, spec.width, spec.height, x - spec.drawW / 2, y - spec.drawH, spec.drawW, spec.drawH);
     }
 
     const drawProjectiles = engine.projectileCount <= 600;
