@@ -36,7 +36,7 @@ Open the local URL shown by Vite. Use `npm run build` for the production build a
 
 ## Highwatch art direction
 
-The campaign is presented as **Siege of Highwatch**: Blue Knights defend an elevated citadel while Goblin raiders cross a lower ravine. The static terrain layer uses a curated Tiny Swords subset and rebakes at waves 1, 11, 21, 31, and 41; tower positions and the enemy route persist. Archer, Warrior, and Engineer commanders unlock at waves 11, 21, and 31 respectively and can be hired onto fixed ridge posts. See `ASSET_CREDITS.md` for asset provenance.
+The campaign is presented as **Siege of Highwatch**: Blue Knights defend an elevated citadel while Goblin raiders cross a lower ravine. The static terrain layer uses a curated Tiny Swords subset and rebakes at waves 1, 11, 21, 31, and 41; troop positions and the enemy route persist. Players deploy animated Longbow Guards, Siege Engineers, and Shield Warriors onto ridge posts, train them through three ranks, and discharge them for gold. See `ASSET_CREDITS.md` for asset provenance.
 
 ## Performance design
 
