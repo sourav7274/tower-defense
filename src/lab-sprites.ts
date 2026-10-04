@@ -128,11 +128,13 @@ export class LabSprites {
     if (!this.ready || !this.gl) return;
     this.count = 0;
     const tick = Math.floor(performance.now() / 120);
+    const enemyW = 64, enemyH = 60, enemyLift = 20;
     for (let i = 0; i < engine.enemyActive.length; i++) if (engine.enemyActive[i]) {
-      this.emit(engine.enemyX[i], engine.enemyY[i] - 20, 64, 60, engine.enemyType[i] * 4 + ((tick + i) & 3));
+      this.emit(engine.enemyX[i], engine.enemyY[i] - enemyLift, enemyW, enemyH, engine.enemyType[i] * 4 + ((tick + i) & 3));
     }
     for (let i = 0; i < engine.projectileActive.length; i++) if (engine.projectileActive[i]) {
       const kind = engine.projectileColor[i], target = engine.projectileTarget[i];
+      if (target < 0) continue;
       const angle = kind === 1 ? 0 : Math.atan2(engine.enemyY[target] - engine.projectileY[i], engine.enemyX[target] - engine.projectileX[i]);
       this.emit(engine.projectileX[i], engine.projectileY[i], kind === 1 ? 26 : 34, kind === 1 ? 26 : 14, 20 + kind, angle);
     }

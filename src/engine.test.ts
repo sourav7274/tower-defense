@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Engine, GATE_PATH_INSET, LEVELS, PATH_LENGTH } from './engine';
+import { Engine, GATE_PATH_INSET, LEVELS, PATH_LENGTH, towerInfo } from './engine';
 
 describe('Arcane Bastion simulation', () => {
   it('starts a campaign wave and produces advancing enemies', () => {
@@ -46,7 +46,7 @@ describe('Arcane Bastion simulation', () => {
         expect(game.snapshot().projectiles).toBe(1000);
       }
     }
-    expect(game.kills).toBeGreaterThan(0);
+    expect(game.kills).toBe(0);
     expect(game.health).toBe(Infinity);
     expect(Math.max(...game.enemyDist)).toBeLessThan(PATH_LENGTH - GATE_PATH_INSET);
   });
@@ -55,17 +55,56 @@ describe('Arcane Bastion simulation', () => {
     const game = new Engine();
     game.setupBenchmark(false, 1000, 100, 1000);
     for (let i = 0; i < 600; i++) game.update(1 / 60);
-    expect(game.kills).toBeGreaterThan(0);
+    expect(game.kills).toBe(0);
     expect(game.snapshot().enemies).toBe(1000);
     expect(game.snapshot().projectiles).toBe(1000);
     expect(game.health).toBe(Infinity);
+  });
+
+  it('keeps lab towers outside the advancing horde idle', () => {
+    const game = new Engine();
+    game.setupBenchmark(false, 1000, 100, 1000);
+    game.update(1 / 60);
+    const attacking = game.towers.filter(tower => tower.attackTime > 0).length;
+    expect(attacking).toBeGreaterThan(0);
+    expect(attacking).toBeLessThan(game.towers.length);
+  });
+
+  it('only assigns Lab projectiles to enemies inside their owner range', () => {
+    const game = new Engine();
+    game.setupBenchmark(false, 1000, 100, 1000);
+    for (let i = 0; i < game.projectileActive.length; i++) if (game.projectileActive[i]) {
+      const target = game.projectileTarget[i], tower = game.towers[game.projectileOwner[i]], range = towerInfo[tower.kind].range;
+      expect(target).toBeGreaterThanOrEqual(0);
+      const dx = game.enemyX[target] - tower.x, dy = game.enemyY[target] - tower.y;
+      expect(dx * dx + dy * dy).toBeLessThanOrEqual(range * range);
+    }
+  });
+
+  it('keeps surviving Lab projectile targets within their original owner range', () => {
+    const game = new Engine();
+    game.setupBenchmark(false, 1000, 100, 1000);
+    for (let frame = 0; frame < 240; frame++) game.update(1 / 60);
+    for (let i = 0; i < game.projectileActive.length; i++) if (game.projectileActive[i] && game.projectileTarget[i] >= 0) {
+      const target = game.projectileTarget[i], tower = game.towers[game.projectileOwner[i]], range = towerInfo[tower.kind].range;
+      const dx = game.enemyX[target] - tower.x, dy = game.enemyY[target] - tower.y;
+      expect(dx * dx + dy * dy).toBeLessThanOrEqual(range * range);
+    }
+  });
+
+  it('keeps a no-projectile Lab diagnostic free of combat shots', () => {
+    const game = new Engine();
+    game.setupBenchmark(false, 1000, 100, 0);
+    for (let i = 0; i < 120; i++) game.update(1 / 60);
+    expect(game.snapshot().projectiles).toBe(0);
+    expect(game.towers.every(tower => tower.attackTime === 0)).toBe(true);
   });
 
   it('can let defeated lab enemies die without replacing them', () => {
     const game = new Engine();
     game.setupBenchmark(false, 1000, 100, 1000, false);
     for (let i = 0; i < 600; i++) game.update(1 / 60);
-    expect(game.kills).toBeGreaterThan(0);
+    expect(game.kills).toBe(0);
     expect(game.snapshot().enemies).toBeLessThan(1000);
     expect(game.health).toBe(Infinity);
   });
