@@ -21,9 +21,9 @@ Open the local URL shown by Vite. Use `npm run build` for the production build a
 
 ## Architecture
 
-`src/engine.ts` is a framework-independent simulation. It uses one fixed 60 Hz update loop, seeded wave generation, compact enemy/projectile pools, and a uniform spatial grid. The DOM only owns controls and accessible textual state; it never holds thousands of game entities.
+`src/engine.ts` is a framework-independent simulation. It uses one fixed 60 Hz update loop, seeded wave generation, compact enemy/projectile pools, and a uniform spatial grid. The DOM only owns controls and accessible textual state; it never holds thousands of game entities. The benchmark uses the same simulation as the campaign, but slows enemy movement to 28%, multiplies tower damage by 12, and gives the gate infinite health. Lethal hits count as kills and the defeated raider re-enters near the path entrance; tower shots reuse the fixed projectile slots. This keeps the requested population active throughout a measurement while attacks still have visible consequences. These rules apply only in the Performance Lab.
 
-`src/renderer.ts` owns drawing. It rebakes the static Canvas 2D map only on a level/wave change or viewport resize, then streams visible dynamic instances to WebGL2 each frame. The WebGL renderer uses instanced quads for high-load fallback entities. Browsers without WebGL2 receive a simpler Canvas fallback.
+`src/renderer.ts` owns drawing. It rebakes the static Canvas 2D map only on a level/wave change or viewport resize. Normal combat uses animated Canvas sprites. `src/lab-sprites.ts` packs local enemy and projectile art into a texture atlas and draws high-load instances through WebGL2; the naive comparison draws that same art individually on Canvas 2D. Towers and combat effects retain their animated Canvas layer in both lab modes. Browsers without WebGL2 receive a Canvas fallback.
 
 `src/main.ts` connects the renderer, simulation, controls, game states, and the Performance Lab. The only recurring scheduler is `requestAnimationFrame`; individual towers, enemies, and projectiles do not create timers or animation loops.
 
@@ -45,25 +45,29 @@ The costly operations in a tower-defense game are target selection, collision/sp
 
 - **Typed-array pools:** enemies and projectiles reuse fixed slots. This avoids object churn and keeps memory broadly flat over a run.
 - **Spatial grid:** every active enemy is linked into a nearby map cell each simulation tick. Towers and splash effects query only cells intersecting their radius rather than scanning the complete population.
-- **Batched WebGL2:** all dynamic entities are sent in one reusable instance buffer and one instanced draw call. The static relief map is not redrawn every frame.
+- **Batched WebGL2:** high-load enemies and projectiles share one texture atlas, one reusable instance buffer, and one instanced draw call. The static relief map is not redrawn every frame.
 - **Fixed timestep:** simulation runs at 60 Hz via an accumulator, with rendering decoupled from monitor refresh rate.
 - **Visibility-aware rendering:** the instance emission path is isolated from simulation and can reject entities outside the current battlefield view when a camera is introduced; the shipped map is deliberately framed to the playable viewport.
 
 ## Performance Lab and measurement
 
-Open the live **Performance Overlay** from the top bar to inspect normal campaign metrics without blocking play. Open **Performance Lab** from the contextual command panel when you want to run the separate seeded comparison scenario in two modes:
+Open the live **Performance Overlay** or **Performance Lab** from the top bar. The overlay inspects normal campaign metrics without blocking play; the lab runs a separate seeded comparison scenario in two modes:
 
-- **Naive baseline:** deliberately broad tower scans plus per-entity Canvas 2D drawing. It is visibly labelled as a comparison reference, not the shipping implementation.
+- **Naive comparison:** broad tower scans plus per-entity Canvas 2D drawing. It shares the typed-array engine with the optimized mode and is a reference comparison, not proof of the performance of an earlier LLM version.
 - **Optimized engine:** typed-array pools, spatial grid, and batched WebGL2 production rendering.
 
-Each mode has 1,000, 2,500, and 5,000 enemy presets. The 5,000 preset also provisions 100 towers and 1,000 active projectiles. The lab displays rolling FPS, 95th-percentile FPS, percentage of frames over 33 ms, exact active counts, and JS heap usage where Chromium exposes it.
+Each mode has 1,000, 2,500, and 5,000 enemy presets. The 5,000 preset starts with 100 towers and 1,000 active projectiles alongside the enemies. Choose **Replace to hold load** for the requirement stress test: defeated raiders re-enter and the benchmark can prove the minimum active population. Choose **Die permanently** for a combat demonstration: defeated raiders leave the field and the final result records the lower minimum enemy count. Choose a 30-, 45-, or 60-second capture; every run has a ten-second warm-up first, then pauses automatically at completion.
 
-For an assessment measurement, use a production build in a current Chrome or Edge window, close unrelated tabs, select **5,000 stress**, let it warm for ten seconds, then record at least thirty seconds of rolling metrics. Record browser version, OS, display resolution/refresh rate, CPU, GPU, and RAM alongside the result. The acceptance target is at least 45 FPS for 95% of sampled frames and fewer than 5% of frames above 33 ms. Results are hardware-specific and should be reported honestly rather than generalized.
+The final result shows average FPS, P95 frame time, 0.1% low FPS, percentage of frames at or above 45 FPS, percentage over 33 ms, defeats, minimum active counts, and JS heap usage where Chromium exposes it. Frame intervals are recorded raw; only simulation time is capped after a delayed frame. Pausing during a run pauses the capture clock.
+
+For an assessment measurement, use a production build in a current Chrome or Edge window, close unrelated tabs, select **5,000 stress**, **Replace to hold load**, and a capture duration, then wait for the automatic result. Record browser version, OS, display resolution/refresh rate, CPU, GPU, and RAM alongside the result. The acceptance target is at least 45 FPS for 95% of sampled frames and fewer than 5% of frames above 33 ms, with the minimum active counts during capture meeting the chosen load. Results are hardware-specific and should be reported honestly rather than generalized.
+
+The pre-measurement project is preserved as the local Git tag `baseline-pre-measurement` at commit `1c3277744ed441f48f706e4f18f6c26e5a6cb7b9`. Run it in a separate checkout for a version comparison. This tag captures the project before the sustained-load and measurement fixes; it does not identify the original LLM implementation. The in-app comparison mode and the historical Git version answer different questions and should be described separately in the recording.
 
 ## Recording kit (3–4 minutes)
 
 1. Introduce Arcane Bastion and show the playable campaign: choose a tower, place it, launch a wave, upgrade/sell, pause, and change speed.
-2. Open Performance Lab. Explain that **Naive baseline** deliberately represents an initial object-heavy implementation: global tower scans and individual Canvas entity draws.
+2. Open Performance Lab. Explain that **Naive baseline** is a comparison mode with global tower scans and individual Canvas entity draws; do not present it as the historical initial LLM implementation.
 3. Run the baseline at 1,000, then 2,500/5,000 enemies; visibly show the live FPS and `Frames over 33ms` metric dropping.
 4. Explain the improvements: fixed timestep, pools, spatial grid, static map caching, and one batched WebGL instance stream.
 5. Switch to **Optimized engine**, choose **5,000 stress**, run it for at least ten seconds, and show `5,000 / 100 / 1,000` plus the live metrics.

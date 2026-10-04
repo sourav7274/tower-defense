@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Engine, LEVELS, PATH_LENGTH } from './engine';
+import { Engine, GATE_PATH_INSET, LEVELS, PATH_LENGTH } from './engine';
 
 describe('Arcane Bastion simulation', () => {
   it('starts a campaign wave and produces advancing enemies', () => {
@@ -31,15 +31,43 @@ describe('Arcane Bastion simulation', () => {
     expect(game.effectCount).toBeLessThanOrEqual(768);
   });
 
-  it('provisions the required stress scenario with pooled active entities', () => {
+  it('sustains the required stress population through warm-up and capture', () => {
     const game = new Engine();
     game.setupBenchmark(false, 5000, 100, 1000);
     const state = game.snapshot();
     expect(state.enemies).toBe(5000);
     expect(state.towers).toBe(100);
     expect(state.projectiles).toBe(1000);
-    for (let i = 0; i < 30; i++) game.update(1 / 60);
-    expect(game.snapshot().enemies).toBeGreaterThan(0);
+    for (let i = 0; i < 2400; i++) {
+      game.update(1 / 60);
+      if (i % 60 === 0) {
+        expect(game.snapshot().enemies).toBe(5000);
+        expect(game.snapshot().towers).toBe(100);
+        expect(game.snapshot().projectiles).toBe(1000);
+      }
+    }
+    expect(game.kills).toBeGreaterThan(0);
+    expect(game.health).toBe(Infinity);
+    expect(Math.max(...game.enemyDist)).toBeLessThan(PATH_LENGTH - GATE_PATH_INSET);
+  });
+
+  it('turns a lab tower attack into a visible defeat and replacement', () => {
+    const game = new Engine();
+    game.setupBenchmark(false, 1000, 100, 1000);
+    for (let i = 0; i < 600; i++) game.update(1 / 60);
+    expect(game.kills).toBeGreaterThan(0);
+    expect(game.snapshot().enemies).toBe(1000);
+    expect(game.snapshot().projectiles).toBe(1000);
+    expect(game.health).toBe(Infinity);
+  });
+
+  it('can let defeated lab enemies die without replacing them', () => {
+    const game = new Engine();
+    game.setupBenchmark(false, 1000, 100, 1000, false);
+    for (let i = 0; i < 600; i++) game.update(1 / 60);
+    expect(game.kills).toBeGreaterThan(0);
+    expect(game.snapshot().enemies).toBeLessThan(1000);
+    expect(game.health).toBe(Infinity);
   });
 
   it('advances into a fresh level economy while retaining campaign score and kills', () => {
